@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { DataEditor } from "@/components/DataEditor";
 import { ChartConfigPanel } from "@/components/ChartConfig";
 import { ChartPreview } from "@/components/ChartPreview";
-import { PerplexityAttribution } from "@/components/PerplexityAttribution";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -228,8 +227,7 @@ export default function Home() {
                 <ChartPreview data={data} config={config} />
               </div>
               {/* Footer: Attribution */}
-              <div className="px-4 pb-2 flex items-center justify-between">
-                <PerplexityAttribution />
+              <div className="px-4 pb-2 flex items-center justify-end">
                 <span className="text-[10px] text-muted-foreground/60 select-none">
                   Group Zhang, SICAU
                 </span>

@@ -165,9 +165,11 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
           value={String(config.xAxisColumn)} 
           onValueChange={(v) => {
             const idx = Number(v);
-            update("xAxisColumn", idx);
-            // Optionally remove from selected Y columns if it was there
-            update("selectedColumns", config.selectedColumns.filter(i => i !== idx));
+            onConfigChange({
+              ...config,
+              xAxisColumn: idx,
+              selectedColumns: config.selectedColumns.filter(i => i !== idx)
+            });
           }}
         >
           <SelectTrigger className="h-8 text-xs bg-accent/20">
