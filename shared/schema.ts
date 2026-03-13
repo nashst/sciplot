@@ -6,8 +6,12 @@ export const chartTypes = [
   "scatter",
   "bar",
   "barH",
+  "area",
+  "pie",
+  "radar",
   "heatmap",
   "boxplot",
+  "violin",
 ] as const;
 
 export type ChartType = (typeof chartTypes)[number];
@@ -17,8 +21,12 @@ export const chartTypeLabels: Record<ChartType, string> = {
   scatter: "散点图",
   bar: "柱状图",
   barH: "条形图",
+  area: "面积图",
+  pie: "饼图",
+  radar: "雷达图",
   heatmap: "热力图",
   boxplot: "箱线图",
+  violin: "小提琴图",
 };
 
 // Nature-level color palette (muted, high-contrast, colorblind-safe)
@@ -54,6 +62,9 @@ export const chartConfigSchema = z.object({
   heatmapMax: z.number().optional(),
   backgroundColor: z.string().default("#ffffff"),
   showErrorBars: z.boolean().default(false),
+  areaOpacity: z.number().default(0.35),
+  pieRoseType: z.boolean().default(false),
+  pieDonut: z.boolean().default(false),
 });
 
 export type ChartConfig = z.infer<typeof chartConfigSchema>;
@@ -77,4 +88,7 @@ export const defaultChartConfig: ChartConfig = {
   barWidth: "60%",
   backgroundColor: "#ffffff",
   showErrorBars: false,
+  areaOpacity: 0.35,
+  pieRoseType: false,
+  pieDonut: false,
 };

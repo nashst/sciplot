@@ -419,6 +419,344 @@ export function buildBoxplotChart(data: ParsedData, config: ChartConfig): EChart
   };
 }
 
+export function buildAreaChart(data: ParsedData, config: ChartConfig): EChartsOption {
+  const base = getBaseOption(config);
+  const xData = data.rows.map((r) => r[0]);
+  const series = data.headers.slice(1).map((name, i) => ({
+    name,
+    type: "line" as const,
+    data: data.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : null)),
+    smooth: config.smooth,
+    showSymbol: config.showSymbol,
+    symbolSize: config.symbolSize,
+    lineStyle: { width: config.lineWidth },
+    areaStyle: { opacity: config.areaOpacity ?? 0.35 },
+  }));
+
+  return {
+    ...base,
+    xAxis: {
+      ...(base.xAxis as object),
+      type: "category" as const,
+      data: xData,
+      name: config.xAxisLabel,
+      boundaryGap: false,
+    },
+    yAxis: {
+      ...(base.yAxis as object),
+      type: "value" as const,
+      name: config.yAxisLabel,
+    },
+    series,
+  };
+}
+
+export function buildPieChart(data: ParsedData, config: ChartConfig): EChartsOption {
+  const base = getBaseOption(config);
+  const isDark = config.backgroundColor !== "#ffffff";
+  const textColor = isDark ? "#D4D4D8" : "#333333";
+
+  // Data: first col = labels, second col = values
+  const pieData = data.rows.map((r) => ({
+    name: String(r[0]),
+    value: isNumeric(r[1]) ? toNumber(r[1]) : 0,
+  }));
+
+  const radius: [string, string] = config.pieDonut ? ["40%", "70%"] : ["0%", "70%"];
+
+  return {
+    ...base,
+    tooltip: {
+      ...(base.tooltip as object),
+      trigger: "item" as const,
+      formatter: "{b}: {c} ({d}%)",
+    },
+    xAxis: undefined as any,
+    yAxis: undefined as any,
+    series: [
+      {
+        type: "pie" as const,
+        radius,
+        center: ["50%", "55%"],
+        roseType: config.pieRoseType ? ("area" as const) : undefined,
+        data: pieData,
+        label: {
+          fontSize: config.fontSize - 2,
+          fontFamily: config.fontFamily,
+          color: textColor,
+          formatter: "{b}\n{d}%",
+        },
+        labelLine: {
+          length: 16,
+          length2: 8,
+        },
+        itemStyle: {
+          borderRadius: 4,
+          borderColor: isDark ? "#1e1e22" : "#fff",
+          borderWidth: 2,
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: "rgba(0, 0, 0, 0.15)",
+          },
+        },
+      },
+    ],
+  };
+}
+
+export function buildRadarChart(data: ParsedData, config: ChartConfig): EChartsOption {
+  const base = getBaseOption(config);
+  const isDark = config.backgroundColor !== "#ffffff";
+
+  // First col = dimension names, remaining cols = series data
+  // OR: first row headers[1:] = series names, first col = indicators
+  const indicators = data.rows.map((r) => {
+    const vals = r.slice(1).map((v) => (isNumeric(v) ? toNumber(v) : 0));
+    return {
+      name: String(r[0]),
+      max: Math.ceil(Math.max(...vals) * 1.3),
+    };
+  });
+
+  const seriesData = data.headers.slice(1).map((name, i) => ({
+    name,
+    value: data.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : 0)),
+    areaStyle: { opacity: 0.15 },
+    lineStyle: { width: config.lineWidth },
+    symbolSize: config.symbolSize,
+  }));
+
+  return {
+    ...base,
+    xAxis: undefined as any,
+    yAxis: undefined as any,
+    radar: {
+      indicator: indicators,
+      shape: "polygon" as const,
+      splitNumber: 4,
+      axisName: {
+        color: isDark ? "#aaa" : "#555",
+        fontSize: config.fontSize - 2,
+        fontFamily: config.fontFamily,
+      },
+      splitLine: {
+        lineStyle: { color: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)" },
+      },
+      splitArea: {
+        show: true,
+        areaStyle: {
+          color: isDark
+            ? ["rgba(255,255,255,0.02)", "rgba(255,255,255,0.04)"]
+            : ["rgba(0,0,0,0.01)", "rgba(0,0,0,0.03)"],
+        },
+      },
+      axisLine: {
+        lineStyle: { color: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)" },
+      },
+    },
+    series: [
+      {
+        type: "radar" as const,
+        data: seriesData,
+      },
+    ],
+  };
+}
+
+export function buildViolinChart(data: ParsedData, config: ChartConfig): EChartsOption {
+  const base = getBaseOption(config);
+  const isDark = config.backgroundColor !== "#ffffff";
+  const colors = config.colors.length ? config.colors : NATURE_COLORS;
+
+  const categories = data.headers.slice(0);
+  const rawGroups: number[][] = categories.map(() => []);
+
+  data.rows.forEach((row) => {
+    row.forEach((val, ci) => {
+      if (isNumeric(val)) {
+        rawGroups[ci].push(toNumber(val));
+      }
+    });
+  });
+
+  // Kernel density estimation (Gaussian)
+  function kde(values: number[], bandwidth: number, nPoints: number = 50): { x: number; y: number }[] {
+    const sorted = [...values].sort((a, b) => a - b);
+    const min = sorted[0] - bandwidth * 2;
+    const max = sorted[sorted.length - 1] + bandwidth * 2;
+    const step = (max - min) / (nPoints - 1);
+    const points: { x: number; y: number }[] = [];
+    for (let i = 0; i < nPoints; i++) {
+      const x = min + i * step;
+      let density = 0;
+      for (const v of values) {
+        const z = (x - v) / bandwidth;
+        density += Math.exp(-0.5 * z * z) / (bandwidth * Math.sqrt(2 * Math.PI));
+      }
+      density /= values.length;
+      points.push({ x, y: density });
+    }
+    return points;
+  }
+
+  // Scott's rule for bandwidth
+  function scottBandwidth(values: number[]): number {
+    const n = values.length;
+    const sorted = [...values].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(n * 0.25)];
+    const q3 = sorted[Math.floor(n * 0.75)];
+    const iqr = q3 - q1;
+    const std = Math.sqrt(values.reduce((s, v) => s + (v - values.reduce((a, b) => a + b, 0) / n) ** 2, 0) / n);
+    const h = 1.06 * Math.min(std, iqr / 1.34) * Math.pow(n, -0.2);
+    return Math.max(h, 0.1);
+  }
+
+  const allSeries: any[] = [];
+
+  rawGroups.forEach((group, gi) => {
+    if (group.length < 3) return;
+    const bw = scottBandwidth(group);
+    const density = kde(group, bw, 40);
+    const maxDensity = Math.max(...density.map((d) => d.y));
+    const halfWidth = 0.38;
+
+    // Left and right halves of the violin
+    const leftPoints = density.map((d) => [
+      gi - (d.y / maxDensity) * halfWidth,
+      d.x,
+    ]);
+    const rightPoints = density.map((d) => [
+      gi + (d.y / maxDensity) * halfWidth,
+      d.x,
+    ]);
+
+    // Create a closed polygon
+    const polygonData = [...leftPoints, ...rightPoints.reverse()];
+
+    allSeries.push({
+      type: "custom" as const,
+      renderItem: (_params: any, api: any) => {
+        const points = polygonData.map((p) => {
+          const x = api.coord([p[0], p[1]]);
+          return x;
+        });
+        return {
+          type: "polygon",
+          shape: { points },
+          style: {
+            fill: colors[gi % colors.length],
+            opacity: 0.6,
+            stroke: colors[gi % colors.length],
+            lineWidth: 1.5,
+          },
+        };
+      },
+      data: polygonData,
+      z: 1,
+    });
+
+    // Add boxplot overlay
+    const sorted = [...group].sort((a, b) => a - b);
+    const n = sorted.length;
+    const q1 = sorted[Math.floor(n * 0.25)];
+    const median = sorted[Math.floor(n * 0.5)];
+    const q3 = sorted[Math.floor(n * 0.75)];
+
+    // Box
+    allSeries.push({
+      type: "custom" as const,
+      renderItem: (_params: any, api: any) => {
+        const boxW = 12;
+        const topLeft = api.coord([gi, q3]);
+        const bottomRight = api.coord([gi, q1]);
+        const medianPt = api.coord([gi, median]);
+        return {
+          type: "group",
+          children: [
+            {
+              type: "rect",
+              shape: {
+                x: topLeft[0] - boxW / 2,
+                y: topLeft[1],
+                width: boxW,
+                height: bottomRight[1] - topLeft[1],
+              },
+              style: {
+                fill: isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.08)",
+                stroke: isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.3)",
+                lineWidth: 1,
+              },
+            },
+            {
+              type: "line",
+              shape: {
+                x1: medianPt[0] - boxW / 2,
+                y1: medianPt[1],
+                x2: medianPt[0] + boxW / 2,
+                y2: medianPt[1],
+              },
+              style: {
+                stroke: isDark ? "#fff" : "#333",
+                lineWidth: 2,
+              },
+            },
+          ],
+        };
+      },
+      data: [[gi, q1, median, q3]],
+      z: 2,
+    });
+  });
+
+  return {
+    ...base,
+    tooltip: {
+      ...(base.tooltip as object),
+      trigger: "item" as const,
+      formatter: (params: any) => {
+        const idx = params.seriesIndex;
+        const groupIdx = Math.floor(idx / 2);
+        if (groupIdx < categories.length) {
+          const group = rawGroups[groupIdx];
+          if (!group || group.length === 0) return "";
+          const sorted = [...group].sort((a, b) => a - b);
+          const n = sorted.length;
+          const mean = (group.reduce((a, b) => a + b, 0) / n).toFixed(2);
+          const median = sorted[Math.floor(n * 0.5)].toFixed(2);
+          return `<strong>${categories[groupIdx]}</strong><br/>N=${n}<br/>Mean: ${mean}<br/>Median: ${median}`;
+        }
+        return "";
+      },
+    },
+    xAxis: {
+      ...(base.xAxis as object),
+      type: "value" as const,
+      min: -0.5,
+      max: categories.length - 0.5,
+      axisLabel: {
+        ...(base.xAxis as any)?.axisLabel,
+        formatter: (val: number) => {
+          const idx = Math.round(val);
+          return idx >= 0 && idx < categories.length ? categories[idx] : "";
+        },
+        interval: 0,
+      },
+      name: config.xAxisLabel,
+      splitLine: { show: false },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      ...(base.yAxis as object),
+      type: "value" as const,
+      name: config.yAxisLabel,
+    },
+    series: allSeries,
+  };
+}
+
 export function buildChart(
   chartType: ChartType,
   data: ParsedData,
@@ -433,10 +771,18 @@ export function buildChart(
       return buildBarChart(data, config);
     case "barH":
       return buildBarHChart(data, config);
+    case "area":
+      return buildAreaChart(data, config);
+    case "pie":
+      return buildPieChart(data, config);
+    case "radar":
+      return buildRadarChart(data, config);
     case "heatmap":
       return buildHeatmapChart(data, config);
     case "boxplot":
       return buildBoxplotChart(data, config);
+    case "violin":
+      return buildViolinChart(data, config);
     default:
       return buildLineChart(data, config);
   }
@@ -531,6 +877,69 @@ export function getSampleData(chartType: ChartType): ParsedData {
           [12.6, 19.4, 15.4, 23.5],
           [10.2, 23.8, 13.1, 27.3],
           [16.1, 15.9, 17.2, 19.5],
+        ],
+      };
+    case "area":
+      return {
+        headers: ["Month", "CO₂ (ppm)", "CH₄ (ppb)"],
+        rows: [
+          ["Jan", 415.2, 1892],
+          ["Feb", 416.0, 1898],
+          ["Mar", 417.1, 1905],
+          ["Apr", 418.3, 1912],
+          ["May", 419.8, 1920],
+          ["Jun", 418.9, 1916],
+          ["Jul", 417.5, 1908],
+          ["Aug", 415.8, 1895],
+          ["Sep", 414.2, 1888],
+          ["Oct", 415.6, 1900],
+          ["Nov", 417.3, 1910],
+          ["Dec", 418.5, 1918],
+        ],
+      };
+    case "pie":
+      return {
+        headers: ["Category", "Value"],
+        rows: [
+          ["Protein Coding", 20345],
+          ["lncRNA", 16849],
+          ["Pseudogene", 14723],
+          ["miRNA", 1881],
+          ["snRNA", 1901],
+          ["Other", 4382],
+        ],
+      };
+    case "radar":
+      return {
+        headers: ["Indicator", "Compound A", "Compound B", "Compound C"],
+        rows: [
+          ["Efficacy", 85, 72, 91],
+          ["Selectivity", 78, 90, 65],
+          ["Bioavailability", 62, 85, 73],
+          ["Half-life", 91, 60, 82],
+          ["Solubility", 55, 78, 88],
+          ["Toxicity (inv.)", 88, 70, 60],
+        ],
+      };
+    case "violin":
+      return {
+        headers: ["Control", "Drug A", "Drug B", "Drug C"],
+        rows: [
+          [12.3, 18.5, 15.2, 22.1],
+          [14.1, 20.3, 14.8, 24.5],
+          [11.8, 17.2, 16.1, 21.3],
+          [13.5, 19.8, 13.9, 23.8],
+          [12.9, 21.5, 15.7, 25.2],
+          [15.2, 16.8, 14.3, 20.7],
+          [11.5, 22.1, 16.8, 26.1],
+          [14.7, 18.9, 15.0, 22.9],
+          [13.1, 20.7, 14.5, 24.1],
+          [12.6, 19.4, 15.4, 23.5],
+          [10.2, 23.8, 13.1, 27.3],
+          [16.1, 15.9, 17.2, 19.5],
+          [13.8, 17.6, 15.9, 23.0],
+          [12.0, 20.1, 14.2, 25.8],
+          [14.5, 19.0, 16.5, 21.7],
         ],
       };
   }

@@ -17,6 +17,10 @@ import {
   BarChartHorizontal,
   Grid3x3,
   BoxSelect,
+  AreaChart,
+  PieChart,
+  Radar,
+  AudioWaveform,
 } from "lucide-react";
 
 interface ChartConfigPanelProps {
@@ -29,8 +33,12 @@ const chartIcons: Record<ChartType, React.ReactNode> = {
   scatter: <ScatterChart className="w-4 h-4" />,
   bar: <BarChart3 className="w-4 h-4" />,
   barH: <BarChartHorizontal className="w-4 h-4" />,
+  area: <AreaChart className="w-4 h-4" />,
+  pie: <PieChart className="w-4 h-4" />,
+  radar: <Radar className="w-4 h-4" />,
   heatmap: <Grid3x3 className="w-4 h-4" />,
   boxplot: <BoxSelect className="w-4 h-4" />,
+  violin: <AudioWaveform className="w-4 h-4" />,
 };
 
 export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelProps) {
@@ -45,7 +53,7 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
           图表类型
         </Label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-5 gap-1">
           {chartTypes.map((t) => (
             <button
               key={t}
@@ -107,15 +115,17 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
             onCheckedChange={(v) => update("showLegend", v)}
           />
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-xs">网格线</span>
-          <Switch
-            data-testid="toggle-grid"
-            checked={config.showGrid}
-            onCheckedChange={(v) => update("showGrid", v)}
-          />
-        </div>
-        {(config.chartType === "line" || config.chartType === "scatter") && (
+        {config.chartType !== "pie" && config.chartType !== "radar" && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs">网格线</span>
+            <Switch
+              data-testid="toggle-grid"
+              checked={config.showGrid}
+              onCheckedChange={(v) => update("showGrid", v)}
+            />
+          </div>
+        )}
+        {(config.chartType === "line" || config.chartType === "scatter" || config.chartType === "area") && (
           <>
             <div className="flex items-center justify-between">
               <span className="text-xs">数据点</span>
@@ -125,7 +135,7 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
                 onCheckedChange={(v) => update("showSymbol", v)}
               />
             </div>
-            {config.chartType === "line" && (
+            {(config.chartType === "line" || config.chartType === "area") && (
               <div className="flex items-center justify-between">
                 <span className="text-xs">平滑曲线</span>
                 <Switch
@@ -137,10 +147,30 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
             )}
           </>
         )}
+        {config.chartType === "pie" && (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-xs">环形图</span>
+              <Switch
+                data-testid="toggle-donut"
+                checked={config.pieDonut}
+                onCheckedChange={(v) => update("pieDonut", v)}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs">南丁格尔玫瑰</span>
+              <Switch
+                data-testid="toggle-rose"
+                checked={config.pieRoseType}
+                onCheckedChange={(v) => update("pieRoseType", v)}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Size Controls */}
-      {(config.chartType === "line" || config.chartType === "scatter") && (
+      {(config.chartType === "line" || config.chartType === "scatter" || config.chartType === "area" || config.chartType === "radar") && (
         <div className="space-y-3">
           <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             样式参数
@@ -159,7 +189,7 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
               onValueChange={([v]) => update("symbolSize", v)}
             />
           </div>
-          {config.chartType === "line" && (
+          {(config.chartType === "line" || config.chartType === "area" || config.chartType === "radar") && (
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs">线宽</span>
@@ -172,6 +202,22 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
                 step={0.5}
                 value={[config.lineWidth]}
                 onValueChange={([v]) => update("lineWidth", v)}
+              />
+            </div>
+          )}
+          {config.chartType === "area" && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs">填充透明度</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{(config.areaOpacity * 100).toFixed(0)}%</span>
+              </div>
+              <Slider
+                data-testid="slider-area-opacity"
+                min={0.05}
+                max={0.8}
+                step={0.05}
+                value={[config.areaOpacity]}
+                onValueChange={([v]) => update("areaOpacity", v)}
               />
             </div>
           )}

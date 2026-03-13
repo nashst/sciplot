@@ -7,6 +7,9 @@ import {
   BarChart,
   HeatmapChart,
   BoxplotChart,
+  PieChart,
+  RadarChart,
+  CustomChart,
 } from "echarts/charts";
 import {
   GridComponent,
@@ -15,6 +18,7 @@ import {
   TitleComponent,
   VisualMapComponent,
   DataZoomComponent,
+  RadarComponent,
 } from "echarts/components";
 import { CanvasRenderer, SVGRenderer } from "echarts/renderers";
 import { Button } from "@/components/ui/button";
@@ -28,12 +32,16 @@ echarts.use([
   BarChart,
   HeatmapChart,
   BoxplotChart,
+  PieChart,
+  RadarChart,
+  CustomChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
   TitleComponent,
   VisualMapComponent,
   DataZoomComponent,
+  RadarComponent,
   CanvasRenderer,
   SVGRenderer,
 ]);
