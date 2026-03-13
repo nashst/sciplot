@@ -80,9 +80,36 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
 
   return (
     <div className="flex flex-col gap-5 text-sm">
+      {/* Style Presets */}
+      <div>
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
+          专业风格预设
+        </Label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { id: "default", label: "默认", icon: "🎨" },
+            { id: "academic", label: "学术", icon: "🏛️" },
+            { id: "clear", label: "简洁", icon: "✨" },
+          ].map((s) => (
+            <button
+              key={s.id}
+              onClick={() => update("stylePreset", s.id)}
+              className={`flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-xs transition-all border ${
+                config.stylePreset === s.id
+                  ? "bg-primary/10 text-primary border-primary"
+                  : "bg-accent/20 text-muted-foreground border-transparent hover:border-border"
+              }`}
+            >
+              <span className="text-sm">{s.icon}</span>
+              <span className="text-[10px]">{s.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Recommendations */}
       {recommendations.length > 0 && (
-        <div className="bg-primary/5 rounded-xl p-3 border border-primary/10">
+        <div className="bg-primary/5 rounded-xl p-3 border border-primary/10 -mb-2">
           <div className="flex items-center gap-1.5 mb-2 text-primary">
             <Sparkles className="w-3.5 h-3.5" />
             <span className="text-[10px] font-bold uppercase tracking-wider">智能推荐</span>
@@ -316,6 +343,43 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
             </div>
           </>
         )}
+        {(config.chartType === "line" || config.chartType === "scatter" || config.chartType === "area") && (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-xs flex items-center gap-1.5">
+                趋势线 <Badge variant="outline" className="text-[8px] h-3 px-1 leading-none py-0">Beta</Badge>
+              </span>
+              <Switch
+                checked={config.showTrendLine}
+                onCheckedChange={(v) => update("showTrendLine", v)}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs">置信区间</span>
+              <Switch
+                checked={config.showConfidenceInterval}
+                onCheckedChange={(v) => update("showConfidenceInterval", v)}
+              />
+            </div>
+          </>
+        )}
+        {(config.chartType === "bar" || config.chartType === "line") && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs">误差棒 (Global)</span>
+              <Select value={config.errorBarType} onValueChange={(v) => update("errorBarType", v as any)}>
+                <SelectTrigger className="h-7 text-[10px] w-[80px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">无</SelectItem>
+                  <SelectItem value="sd">±SD</SelectItem>
+                  <SelectItem value="se">±SE</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
         {hasStack(config.chartType) && (
           <div className="flex items-center justify-between">
             <span className="text-xs">堆叠</span>
@@ -441,32 +505,38 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
         </div>
       )}
 
-      {/* Dimensions */}
+      {/* Dimensions & Ratio */}
       <div className="space-y-2">
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-          尺寸 (px)
+          布局比例与尺寸
         </Label>
+        <Select value={config.aspectRatio} onValueChange={(v) => update("aspectRatio", v)}>
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="选择宽高比" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="free">自由比例 (根据容器)</SelectItem>
+            <SelectItem value="1:1">1:1 正方形</SelectItem>
+            <SelectItem value="4:3">4:3 标准</SelectItem>
+            <SelectItem value="3:2">3:2 学术</SelectItem>
+            <SelectItem value="16:9">16:9 宽屏</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="grid grid-cols-2 gap-2">
-          <div>
-            <span className="text-xs text-muted-foreground">宽度</span>
-            <Input
-              data-testid="input-width"
-              type="number"
-              value={config.width}
-              onChange={(e) => update("width", Number(e.target.value) || 800)}
-              className="h-8 text-xs tabular-nums mt-1"
-            />
-          </div>
-          <div>
-            <span className="text-xs text-muted-foreground">高度</span>
-            <Input
-              data-testid="input-height"
-              type="number"
-              value={config.height}
-              onChange={(e) => update("height", Number(e.target.value) || 600)}
-              className="h-8 text-xs tabular-nums mt-1"
-            />
-          </div>
+          <Input
+            data-testid="input-width"
+            type="number"
+            value={config.width}
+            onChange={(e) => update("width", Number(e.target.value) || 800)}
+            className="h-8 text-xs tabular-nums"
+          />
+          <Input
+            data-testid="input-height"
+            type="number"
+            value={config.height}
+            onChange={(e) => update("height", Number(e.target.value) || 600)}
+            className="h-8 text-xs tabular-nums"
+          />
         </div>
       </div>
 

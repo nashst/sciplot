@@ -124,9 +124,24 @@ export const ChartPreview = memo(function ChartPreview({ data, config }: ChartPr
 
   const hasData = data.headers.length > 0 && data.rows.length > 0;
 
+  const { style, containerStyle } = useMemo(() => {
+    if (config.aspectRatio === "free") {
+      return {
+        containerStyle: { width: "100%", height: "100%" },
+        style: { width: "100%", height: "100%" }
+      };
+    }
+    const [w, h] = config.aspectRatio.split(":").map(Number);
+    // Fixed aspect ratio - we fill the width of the parent and calculate height
+    return {
+      containerStyle: { width: "100%", height: "auto", aspectRatio: `${w}/${h}`, maxWidth: "100%" },
+      style: { width: "100%", height: "100%" }
+    };
+  }, [config.aspectRatio]);
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 shrink-0">
         <h2 className="text-sm font-semibold text-foreground">预览</h2>
         <div className="flex gap-1.5">
           <Button
@@ -154,22 +169,20 @@ export const ChartPreview = memo(function ChartPreview({ data, config }: ChartPr
         </div>
       </div>
       <div
-        className="flex-1 flex items-center justify-center rounded-lg border border-border bg-white dark:bg-[#1e1e22] overflow-hidden"
-        style={{ minHeight: 400 }}
+        className="flex-1 flex items-center justify-center rounded-lg border border-border bg-white dark:bg-[#1e1e22] overflow-hidden p-4 min-h-0"
       >
         {hasData ? (
-          <ReactEChartsCore
-            ref={chartRef}
-            echarts={echarts}
-            option={option}
-            style={{
-              width: Math.min(config.width, 900),
-              height: Math.min(config.height, 660),
-            }}
-            opts={{ renderer: "canvas" }}
-            notMerge
-            lazyUpdate
-          />
+          <div style={containerStyle} className="flex items-center justify-center">
+            <ReactEChartsCore
+              ref={chartRef}
+              echarts={echarts}
+              option={option}
+              style={style}
+              opts={{ renderer: "canvas" }}
+              notMerge
+              lazyUpdate
+            />
+          </div>
         ) : (
           <div className="text-muted-foreground text-sm text-center p-8">
             <Download className="w-8 h-8 mx-auto mb-3 opacity-30" />

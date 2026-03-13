@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Upload, ClipboardPaste, Table, Trash2 } from "lucide-react";
 import { autoDetectAndParse, parseFile, dataToCSVString } from "@/lib/dataParser";
 import type { ParsedData } from "@/lib/chartEngine";
@@ -110,6 +111,45 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
     [data, onDataChange],
   );
 
+  const [showFormula, setShowFormula] = useState(false);
+  const [formula, setFormula] = useState("");
+
+  const applyFormula = useCallback(() => {
+    if (!formula.trim()) return;
+    try {
+      const newHeaders = [...data.headers, `New Col ${data.headers.length + 1}`];
+      const newRows = data.rows.map((row) => {
+        // Replace $1, $2 with row[0], row[1] etc.
+        let expr = formula.replace(/\$(\d+)/g, (_, n) => `(row[${parseInt(n) - 1}] || 0)`);
+        
+        // Also support $HeaderName (simplified, only strictly alpha-numeric headers)
+        data.headers.forEach((h, i) => {
+            const safeH = h.replace(/[^a-zA-Z0-9]/g, "");
+            if (safeH) {
+              expr = expr.replace(new RegExp(`\\$${safeH}`, 'g'), `(row[${i}] || 0)`);
+            }
+        });
+
+        // Add Math. prefix to common functions
+        ["log", "exp", "sin", "cos", "abs", "sqrt"].forEach(f => {
+           expr = expr.replace(new RegExp(`\\b${f}\\(`, 'g'), `Math.${f}(`);
+        });
+
+        try {
+          const val = eval(expr);
+          return [...row, isFinite(val) ? (Math.round(val * 1000000) / 1000000) : ""];
+        } catch (e) {
+          return [...row, ""];
+        }
+      });
+      onDataChange({ headers: newHeaders, rows: newRows });
+      setShowFormula(false);
+      setFormula("");
+    } catch (err) {
+      alert("公式语法错误");
+    }
+  }, [formula, data, onDataChange]);
+
   const clearData = useCallback(() => {
     onDataChange({ headers: ["X", "Y"], rows: [["", ""]] });
     setPage(1);
@@ -117,7 +157,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
 
   return (
     <div className="flex flex-col gap-3 h-full">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <div className="flex rounded-lg border border-border overflow-hidden">
           <button
             data-testid="mode-table"
@@ -151,12 +191,21 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
         <Button
           variant="outline"
           size="sm"
+          onClick={() => setShowFormula(!showFormula)}
+          className={`text-xs h-7 ${showFormula ? 'bg-primary/10 border-primary text-primary' : ''}`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="m18 3-3 3-3-3"/><path d="M3 21h18"/><path d="M3 7h3.5L10 16.5 13.5 7H17"/><path d="M12 21v-4"/></svg>
+          公式
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           data-testid="btn-upload"
           onClick={() => fileInputRef.current?.click()}
           className="text-xs h-7"
         >
           <Upload className="w-3.5 h-3.5 mr-1" />
-          上传文件
+          上传
         </Button>
         <Button
           variant="ghost"
@@ -165,8 +214,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
           onClick={clearData}
           className="text-xs h-7 text-muted-foreground"
         >
-          <Trash2 className="w-3.5 h-3.5 mr-1" />
-          清空
+          <Trash2 className="w-3.5 h-3.5" />
         </Button>
         <input
           ref={fileInputRef}
@@ -176,6 +224,24 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
           onChange={handleFileUpload}
         />
       </div>
+
+      {showFormula && (
+        <div className="bg-primary/5 p-2 rounded-md border border-primary/20 animate-in slide-in-from-top-1 duration-200">
+           <div className="flex gap-2">
+              <Input 
+                value={formula}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormula(e.target.value)}
+                placeholder="公式，如: $1 + $2 或 log($1)"
+                className="h-8 text-xs bg-white"
+              />
+              <Button onClick={applyFormula} size="sm" className="h-8 px-3 text-xs">执行</Button>
+           </div>
+           <p className="text-[10px] text-muted-foreground mt-1.5 px-1 flex gap-2">
+             <span>支持: $1, $2 (列序号)</span>
+             <span>函数: log, exp, sin, sqrt</span>
+           </p>
+        </div>
+      )}
 
       {mode === "paste" ? (
         <div className="flex flex-col gap-2 flex-1">

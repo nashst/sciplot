@@ -100,6 +100,11 @@ export const chartConfigSchema = z.object({
   referenceLineLabel: z.string().default(""),
   selectedColumns: z.array(z.number()).default([]),
   xAxisColumn: z.number().default(0),
+  showTrendLine: z.boolean().default(false),
+  showConfidenceInterval: z.boolean().default(false),
+  errorBarType: z.enum(["none", "sd", "se"]).default("none"),
+  aspectRatio: z.string().default("free"), // e.g., "1:1", "4:3", "free"
+  stylePreset: z.string().default("default"), // "default", "academic", "clear"
 });
 
 export type ChartConfig = z.infer<typeof chartConfigSchema>;
@@ -134,4 +139,9 @@ export const defaultChartConfig: ChartConfig = {
   referenceLineLabel: "",
   selectedColumns: [],
   xAxisColumn: 0,
+  showTrendLine: false,
+  showConfidenceInterval: false,
+  errorBarType: "none",
+  aspectRatio: "free",
+  stylePreset: "default",
 };
