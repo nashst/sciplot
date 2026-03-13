@@ -48,6 +48,10 @@ export const colorThemes: Record<string, { label: string; colors: string[] }> = 
     label: "Science",
     colors: ["#3C5488", "#E64B35", "#00A087", "#F39B7F", "#4DBBD5", "#91D1C2", "#8491B4", "#B09C85"],
   },
+  cell: {
+    label: "Cell",
+    colors: ["#635547", "#C72228", "#45A4D5", "#EFC000", "#3F8C3F", "#8B5E8B", "#F39B7F", "#B09C85"],
+  },
   lancet: {
     label: "Lancet",
     colors: ["#00468B", "#ED0000", "#42B540", "#0099B4", "#925E9F", "#FDAF91", "#AD002A", "#ADB6B6"],
@@ -64,6 +68,16 @@ export const colorThemes: Record<string, { label: string; colors: string[] }> = 
     label: "鲜艳",
     colors: ["#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#A65628", "#F781BF", "#999999"],
   },
+};
+
+// Journal-specific style presets
+export const journalPresets: Record<string, { label: string; icon: string; description: string }> = {
+  default: { label: "默认", icon: "🎨", description: "通用默认" },
+  academic: { label: "学术", icon: "🏛️", description: "经典黑白框" },
+  nature: { label: "Nature", icon: "📗", description: "Nature 期刊" },
+  science: { label: "Science", icon: "📘", description: "Science 期刊" },
+  cell: { label: "Cell", icon: "📙", description: "Cell 期刊" },
+  clear: { label: "简洁", icon: "✨", description: "无坐标轴" },
 };
 
 export const chartConfigSchema = z.object({
@@ -103,8 +117,13 @@ export const chartConfigSchema = z.object({
   showTrendLine: z.boolean().default(false),
   showConfidenceInterval: z.boolean().default(false),
   errorBarType: z.enum(["none", "sd", "se"]).default("none"),
-  aspectRatio: z.string().default("free"), // e.g., "1:1", "4:3", "free"
-  stylePreset: z.string().default("default"), // "default", "academic", "clear"
+  aspectRatio: z.string().default("free"),
+  stylePreset: z.string().default("default"),
+  // Axis interval controls
+  xAxisInterval: z.number().optional(),
+  yAxisInterval: z.number().optional(),
+  // Significance annotations
+  showSignificance: z.boolean().default(false),
 });
 
 export type ChartConfig = z.infer<typeof chartConfigSchema>;
@@ -144,4 +163,5 @@ export const defaultChartConfig: ChartConfig = {
   errorBarType: "none",
   aspectRatio: "free",
   stylePreset: "default",
+  showSignificance: false,
 };

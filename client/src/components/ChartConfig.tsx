@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { chartTypes, chartTypeLabels, colorThemes, type ChartConfig, type ChartType } from "@shared/schema";
+import { chartTypes, chartTypeLabels, colorThemes, journalPresets, type ChartConfig, type ChartType } from "@shared/schema";
 import {
   LineChart,
   ScatterChart,
@@ -26,7 +26,7 @@ import {
   Radar,
   AudioWaveform,
   Sparkles,
-  ListFilter
+  Send,
 } from "lucide-react";
 import { detectColumnTypes, recommendChartType, type ParsedData } from "@/lib/chartEngine";
 
@@ -55,6 +55,66 @@ const hasStack = (t: ChartType) => ["bar", "barH", "line", "area"].includes(t);
 const hasSort = (t: ChartType) => ["bar", "barH"].includes(t);
 const hasRefLine = (t: ChartType) => ["line", "bar", "barH", "area", "scatter"].includes(t);
 
+// AI command processor
+function processAICommand(cmd: string, config: ChartConfig): Partial<ChartConfig> | null {
+  const lower = cmd.toLowerCase().trim();
+  
+  // Color commands
+  if (lower.includes("nature") && (lower.includes("色") || lower.includes("配色") || lower.includes("color") || lower.includes("theme"))) {
+    return { colorTheme: "nature", colors: colorThemes.nature.colors };
+  }
+  if (lower.includes("science") && (lower.includes("色") || lower.includes("配色") || lower.includes("color") || lower.includes("theme"))) {
+    return { colorTheme: "science", colors: colorThemes.science.colors };
+  }
+  if (lower.includes("lancet") && (lower.includes("色") || lower.includes("配色") || lower.includes("color") || lower.includes("theme"))) {
+    return { colorTheme: "lancet", colors: colorThemes.lancet.colors };
+  }
+  if (lower.includes("cell") && (lower.includes("色") || lower.includes("配色") || lower.includes("color") || lower.includes("theme"))) {
+    return { colorTheme: "cell", colors: colorThemes.cell.colors };
+  }
+  
+  // Style presets
+  if (lower.includes("学术") || lower === "academic") return { stylePreset: "academic" };
+  if (lower.includes("简洁") || lower === "clear" || lower === "minimal") return { stylePreset: "clear" };
+  if (lower.includes("默认") || lower === "default") return { stylePreset: "default" };
+  
+  // Chart type
+  if (lower.includes("折线") || lower === "line") return { chartType: "line" as ChartType };
+  if (lower.includes("散点") || lower === "scatter") return { chartType: "scatter" as ChartType };
+  if (lower.includes("柱状") || lower === "bar") return { chartType: "bar" as ChartType };
+  if (lower.includes("条形") || lower === "barh") return { chartType: "barH" as ChartType };
+  if (lower.includes("饼") || lower === "pie") return { chartType: "pie" as ChartType };
+  if (lower.includes("箱线") || lower === "boxplot") return { chartType: "boxplot" as ChartType };
+  if (lower.includes("小提琴") || lower === "violin") return { chartType: "violin" as ChartType };
+  if (lower.includes("面积") || lower === "area") return { chartType: "area" as ChartType };
+  if (lower.includes("雷达") || lower === "radar") return { chartType: "radar" as ChartType };
+  if (lower.includes("热力") || lower === "heatmap") return { chartType: "heatmap" as ChartType };
+  
+  // Toggles
+  if (lower.includes("趋势线") || lower.includes("trend")) return { showTrendLine: !config.showTrendLine };
+  if (lower.includes("网格") || lower.includes("grid")) return { showGrid: !config.showGrid };
+  if (lower.includes("图例") || lower.includes("legend")) return { showLegend: !config.showLegend };
+  if (lower.includes("标签") || lower.includes("label")) return { showDataLabels: !config.showDataLabels };
+  if (lower.includes("平滑") || lower.includes("smooth")) return { smooth: !config.smooth };
+  if (lower.includes("堆叠") || lower.includes("stack")) return { stacked: !config.stacked };
+  
+  // Title
+  const titleMatch = lower.match(/(?:标题|title)[：:\s]+(.+)/);
+  if (titleMatch) return { title: titleMatch[1].trim() };
+  
+  // Font size
+  const fontMatch = lower.match(/(?:字号|fontsize|font size)[：:\s]*(\d+)/);
+  if (fontMatch) return { fontSize: parseInt(fontMatch[1]) };
+  
+  // Axis labels
+  const xLabelMatch = lower.match(/x[轴axis]*[标签label]*[：:\s]+(.+)/);
+  if (xLabelMatch) return { xAxisLabel: xLabelMatch[1].trim() };
+  const yLabelMatch = lower.match(/y[轴axis]*[标签label]*[：:\s]+(.+)/);
+  if (yLabelMatch) return { yAxisLabel: yLabelMatch[1].trim() };
+  
+  return null;
+}
+
 export const ChartConfigPanel = memo(function ChartConfigPanel({
   config,
   onConfigChange,
@@ -68,6 +128,22 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
   const colTypes = useMemo(() => detectColumnTypes(rawData), [rawData]);
   const recommendations = useMemo(() => recommendChartType(colTypes, config), [colTypes, config]);
 
+  const [aiCmd, setAiCmd] = useState("");
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
+
+  const handleAICommand = () => {
+    if (!aiCmd.trim()) return;
+    const changes = processAICommand(aiCmd, config);
+    if (changes) {
+      onConfigChange({ ...config, ...changes });
+      setAiMsg(`✅ 已应用: ${aiCmd}`);
+    } else {
+      setAiMsg(`⚠️ 无法识别: "${aiCmd}"，试试 "标题: xxx" 或 "切换趋势线"`);
+    }
+    setAiCmd("");
+    setTimeout(() => setAiMsg(null), 3000);
+  };
+
   const toggleColumn = (colIdx: number, checked: boolean) => {
     const current = config.selectedColumns || [];
     const next = checked
@@ -76,32 +152,59 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
     update("selectedColumns", next);
   };
 
-  const valueHeaders = dataHeaders.slice(1);
-
   return (
     <div className="flex flex-col gap-5 text-sm">
-      {/* Style Presets */}
+      {/* AI Quick Command */}
+      <div>
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
+          快捷指令
+        </Label>
+        <div className="flex gap-1.5">
+          <Input
+            placeholder="如: 标题: 实验结果, 切换趋势线, science配色..."
+            value={aiCmd}
+            onChange={(e) => setAiCmd(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAICommand(); }}
+            className="h-8 text-xs flex-1"
+          />
+          <button
+            onClick={handleAICommand}
+            className="h-8 w-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        {aiMsg && (
+          <p className={`text-[10px] mt-1 ${aiMsg.startsWith("✅") ? "text-green-500" : "text-amber-500"}`}>{aiMsg}</p>
+        )}
+      </div>
+
+      {/* Style Presets - Journal Specific */}
       <div>
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
           专业风格预设
         </Label>
         <div className="grid grid-cols-3 gap-1.5">
-          {[
-            { id: "default", label: "默认", icon: "🎨" },
-            { id: "academic", label: "学术", icon: "🏛️" },
-            { id: "clear", label: "简洁", icon: "✨" },
-          ].map((s) => (
+          {Object.entries(journalPresets).map(([id, preset]) => (
             <button
-              key={s.id}
-              onClick={() => update("stylePreset", s.id)}
+              key={id}
+              onClick={() => {
+                const changes: Partial<ChartConfig> = { stylePreset: id };
+                // Auto-apply matching color theme if available
+                if (id === "nature") { changes.colorTheme = "nature"; changes.colors = colorThemes.nature.colors; }
+                if (id === "science") { changes.colorTheme = "science"; changes.colors = colorThemes.science.colors; }
+                if (id === "cell") { changes.colorTheme = "cell"; changes.colors = colorThemes.cell.colors; }
+                onConfigChange({ ...config, ...changes });
+              }}
               className={`flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-xs transition-all border ${
-                config.stylePreset === s.id
+                config.stylePreset === id
                   ? "bg-primary/10 text-primary border-primary"
                   : "bg-accent/20 text-muted-foreground border-transparent hover:border-border"
               }`}
+              title={preset.description}
             >
-              <span className="text-sm">{s.icon}</span>
-              <span className="text-[10px]">{s.label}</span>
+              <span className="text-sm">{preset.icon}</span>
+              <span className="text-[10px]">{preset.label}</span>
             </button>
           ))}
         </div>
@@ -185,7 +288,7 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
         </Select>
       </div>
 
-      {/* Column Selector - Upgraded (Y-Axis / Series) */}
+      {/* Column Selector - Y-Axis / Series */}
       <div>
         <div className="flex items-center justify-between mb-2">
            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -216,9 +319,7 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
         <ScrollArea className="h-[140px] rounded-md border border-border p-2 bg-accent/20">
           <div className="flex flex-col gap-1.5">
             {dataHeaders.map((h, i) => {
-              // Hide the current X-axis column from the Y-axis list
               if (i === config.xAxisColumn) return null;
-              
               const isChecked = config.selectedColumns.includes(i);
               const type = colTypes[i];
               return (
@@ -271,6 +372,45 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
           />
         </div>
       </div>
+
+      {/* Axis Interval Controls */}
+      {hasAxis(config.chartType) && (
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            坐标轴间隔
+          </Label>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-muted-foreground block mb-1">X 轴间隔 (每N显示)</span>
+              <Input
+                type="number"
+                placeholder="自动"
+                min={1}
+                value={config.xAxisInterval ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update("xAxisInterval", v === "" ? undefined : Math.max(1, Number(v)));
+                }}
+                className="h-7 text-xs tabular-nums"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground block mb-1">Y 轴间隔 (每N显示)</span>
+              <Input
+                type="number"
+                placeholder="自动"
+                min={1}
+                value={config.yAxisInterval ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update("yAxisInterval", v === "" ? undefined : Math.max(1, Number(v)));
+                }}
+                className="h-7 text-xs tabular-nums"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toggles */}
       <div className="space-y-3">
@@ -380,6 +520,18 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+        )}
+        {/* Significance markers */}
+        {(config.chartType === "bar" || config.chartType === "boxplot") && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs flex items-center gap-1.5">
+              显著性标注 <Badge variant="outline" className="text-[8px] h-3 px-1 leading-none py-0">p值</Badge>
+            </span>
+            <Switch
+              checked={config.showSignificance}
+              onCheckedChange={(v) => update("showSignificance", v)}
+            />
           </div>
         )}
         {hasStack(config.chartType) && (
@@ -547,7 +699,7 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           配色方案
         </Label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-4 gap-1.5">
           {Object.entries(colorThemes).map(([key, theme]) => (
             <button
               key={key}
@@ -558,16 +710,15 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
                   : "bg-accent/40 text-muted-foreground hover:bg-accent"
               }`}
               onClick={() => {
-                update("colorTheme", key);
-                update("colors", theme.colors);
+                onConfigChange({ ...config, colorTheme: key, colors: theme.colors });
               }}
             >
               <div className="flex gap-0.5">
                 {theme.colors.slice(0, 4).map((c, i) => (
-                  <div key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: c }} />
+                  <div key={i} className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c }} />
                 ))}
               </div>
-              <span className="leading-none">{theme.label}</span>
+              <span className="leading-none text-[10px]">{theme.label}</span>
             </button>
           ))}
         </div>

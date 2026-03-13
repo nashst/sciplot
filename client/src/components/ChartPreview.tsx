@@ -170,7 +170,7 @@ export const ChartPreview = memo(function ChartPreview({ data, config }: ChartPr
       </div>
       <div
         className={`flex-1 flex items-center justify-center rounded-lg border border-border overflow-hidden p-4 min-h-0 ${
-          config.stylePreset === "academic" ? "bg-white" : "bg-white dark:bg-[#1e1e22]"
+          ["academic", "nature", "science", "cell"].includes(config.stylePreset) ? "bg-white" : "bg-white dark:bg-[#1e1e22]"
         }`}
       >
         {hasData ? (

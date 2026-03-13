@@ -86,14 +86,29 @@ function sortRows(data: ParsedData, sortData: string): ParsedData {
   return { headers: data.headers, rows: sorted };
 }
 
-// Data label config helper
+// Data label config helper with overlap avoidance
 function labelConfig(config: ChartConfig, position: string = "top"): object {
   return {
     show: config.showDataLabels,
     fontSize: config.fontSize - 3,
     fontFamily: config.fontFamily,
     position,
-    color: (config.stylePreset === "academic") ? "#000" : (config.backgroundColor !== "#ffffff" ? "#ccc" : "#555"),
+    color: (config.stylePreset === "academic" || config.stylePreset === "nature" || config.stylePreset === "science" || config.stylePreset === "cell") ? "#000" : (config.backgroundColor !== "#ffffff" ? "#ccc" : "#555"),
+    overflow: "truncate",
+    formatter: (params: any) => {
+      const val = typeof params.value === 'number' ? params.value : (Array.isArray(params.value) ? params.value[1] : params.value);
+      if (val == null) return '';
+      return typeof val === 'number' ? (Number.isInteger(val) ? val.toString() : val.toFixed(1)) : val;
+    },
+  };
+}
+
+// Label layout to avoid overlap (used at option level)
+function labelLayoutConfig(config: ChartConfig): object | undefined {
+  if (!config.showDataLabels) return undefined;
+  return {
+    hideOverlap: true,
+    moveOverlap: "shiftY",
   };
 }
 
@@ -175,12 +190,22 @@ function dataZoomConfig(config: ChartConfig): object[] | undefined {
 function getBaseOption(config: ChartConfig): EChartsOption {
   const isDark = config.backgroundColor !== "#ffffff";
   const preset = config.stylePreset || "default";
-  const isAcademic = preset === "academic";
+  const isAcademic = preset === "academic" || preset === "nature" || preset === "science" || preset === "cell";
   const isClear = preset === "clear";
 
   const textColor = isDark ? "#D4D4D8" : "#333333";
   const axisLineColor = isAcademic ? "#000000" : (isDark ? "#555" : "#333");
   const splitLineColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+
+  // Journal-specific font overrides
+  const journalFont = (() => {
+    switch (preset) {
+      case "nature": return "Helvetica Neue, Arial, sans-serif";
+      case "science": return "Roboto, Arial, sans-serif";
+      case "cell": return "Arial, Helvetica Neue, sans-serif";
+      default: return config.fontFamily;
+    }
+  })();
 
   return {
     backgroundColor: "transparent",
@@ -191,8 +216,8 @@ function getBaseOption(config: ChartConfig): EChartsOption {
           top: 12,
           textStyle: {
             fontSize: config.fontSize + 2,
-            fontWeight: 600,
-            fontFamily: config.fontFamily,
+            fontWeight: isAcademic ? 700 : 600,
+            fontFamily: journalFont,
             color: isAcademic ? "#000" : textColor,
           },
         }
@@ -203,7 +228,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
       top: config.title ? 56 : 32,
       bottom: (config.xAxisLabel ? 60 : 44) + (config.showDataZoom ? 36 : 0),
       containLabel: false,
-      show: isAcademic ? true : config.showGrid,
+      show: isAcademic,
       borderWidth: isAcademic ? 1 : 0,
       borderColor: "#000",
     },
@@ -211,10 +236,10 @@ function getBaseOption(config: ChartConfig): EChartsOption {
       trigger: "axis" as const,
       backgroundColor: isAcademic ? "#fff" : (isDark ? "#2a2a2e" : "#fff"),
       borderColor: isAcademic ? "#000" : (isDark ? "#444" : "#e5e5e5"),
-      borderWidth: isAcademic ? 1 : 1,
+      borderWidth: 1,
       textStyle: {
         fontSize: 12,
-        fontFamily: config.fontFamily,
+        fontFamily: journalFont,
         color: isAcademic ? "#000" : textColor,
       },
       extraCssText: "box-shadow: 0 2px 8px rgba(0,0,0,0.12); border-radius: 6px;",
@@ -224,7 +249,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
           top: config.title ? 36 : 8,
           textStyle: {
             fontSize: config.fontSize - 2,
-            fontFamily: config.fontFamily,
+            fontFamily: journalFont,
             color: isAcademic ? "#000" : (isDark ? "#aaa" : "#666"),
           },
           itemWidth: 16,
@@ -234,21 +259,22 @@ function getBaseOption(config: ChartConfig): EChartsOption {
       : undefined,
     color: config.colors.length ? config.colors : NATURE_COLORS,
     textStyle: {
-      fontFamily: config.fontFamily,
+      fontFamily: journalFont,
       color: isAcademic ? "#000" : textColor,
     },
     xAxis: {
       show: !isClear,
       nameTextStyle: {
         fontSize: config.fontSize - 1,
-        fontFamily: config.fontFamily,
+        fontFamily: journalFont,
         color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
         padding: [8, 0, 0, 0],
       },
       axisLabel: {
         fontSize: config.fontSize - 2,
-        fontFamily: config.fontFamily,
+        fontFamily: journalFont,
         color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
+        ...(config.xAxisInterval != null ? { interval: config.xAxisInterval - 1 } : {}),
       },
       axisLine: {
         show: true,
@@ -258,6 +284,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
         show: true,
         lineStyle: { color: axisLineColor },
         length: 4,
+        ...(config.xAxisInterval != null ? { interval: config.xAxisInterval - 1 } : {}),
       },
       splitLine: {
         show: config.showGrid && !isAcademic,
@@ -268,14 +295,15 @@ function getBaseOption(config: ChartConfig): EChartsOption {
       show: !isClear,
       nameTextStyle: {
         fontSize: config.fontSize - 1,
-        fontFamily: config.fontFamily,
+        fontFamily: journalFont,
         color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
         padding: [0, 8, 0, 0],
       },
       axisLabel: {
         fontSize: config.fontSize - 2,
-        fontFamily: config.fontFamily,
+        fontFamily: journalFont,
         color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
+        ...(config.yAxisInterval != null ? { interval: config.yAxisInterval - 1 } : {}),
       },
       axisLine: {
         show: true,
@@ -285,6 +313,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
         show: true,
         lineStyle: { color: axisLineColor },
         length: 4,
+        ...(config.yAxisInterval != null ? { interval: config.yAxisInterval - 1 } : {}),
       },
       splitLine: {
         show: config.showGrid && !isAcademic,
@@ -395,6 +424,7 @@ export function buildLineChart(data: ParsedData, config: ChartConfig): EChartsOp
       name: config.yAxisLabel,
     },
     dataZoom: dataZoomConfig(config),
+    labelLayout: labelLayoutConfig(config),
     series: allSeries,
   };
 }
@@ -460,6 +490,7 @@ export function buildScatterChart(data: ParsedData, config: ChartConfig): EChart
       name: config.yAxisLabel,
     },
     dataZoom: dataZoomConfig(config),
+    labelLayout: labelLayoutConfig(config),
     series: allSeries,
   };
 }
@@ -515,6 +546,47 @@ export function buildBarChart(data: ParsedData, config: ChartConfig): EChartsOpt
     }
   });
 
+    // Significance annotations
+    if (config.showSignificance && sorted.headers.length > 2) {
+      const firstColValues = sorted.rows.map(r => isNumeric(r[1]) ? toNumber(r[1]) : 0);
+      const firstStats = getStats(firstColValues);
+      
+      sorted.headers.slice(2).forEach((name, i) => {
+        const colIdx = i + 2;
+        const colValues = sorted.rows.map(r => isNumeric(r[colIdx]) ? toNumber(r[colIdx]) : 0);
+        const colStats = getStats(colValues);
+        
+        // Welch's t-test approximation
+        const n1 = firstColValues.length, n2 = colValues.length;
+        const se = Math.sqrt((firstStats.sd * firstStats.sd / n1) + (colStats.sd * colStats.sd / n2));
+        const tStat = se > 0 ? Math.abs(firstStats.mean - colStats.mean) / se : 0;
+        
+        let stars = "";
+        if (tStat > 3.29) stars = "***";
+        else if (tStat > 2.58) stars = "**";
+        else if (tStat > 1.96) stars = "*";
+        else stars = "ns";
+        
+        if (stars !== "ns") {
+          // Add markPoint to the corresponding series
+          const seriesIdx = i + 1; // 0-indexed in allSeries, series[0] is first, series[1] is second...
+          if (allSeries[seriesIdx]) {
+            const maxVal = Math.max(...colValues);
+            allSeries[seriesIdx].markPoint = {
+              data: [{ 
+                coord: [sorted.rows.indexOf(sorted.rows.find(r => toNumber(r[colIdx]) === maxVal)!), maxVal * 1.08],
+                value: stars,
+                symbol: "pin",
+                symbolSize: 1,
+                label: { show: true, formatter: stars, fontSize: 12, fontWeight: "bold", color: "#C75C2F", offset: [0, -8] }
+              }],
+              silent: true,
+            };
+          }
+        }
+      });
+    }
+
   return {
     ...base,
     xAxis: {
@@ -529,6 +601,7 @@ export function buildBarChart(data: ParsedData, config: ChartConfig): EChartsOpt
       name: config.yAxisLabel,
     },
     dataZoom: dataZoomConfig(config),
+    labelLayout: labelLayoutConfig(config),
     series: allSeries,
   };
 }
