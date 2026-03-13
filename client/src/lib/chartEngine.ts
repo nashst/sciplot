@@ -7,6 +7,76 @@ export interface ParsedData {
   rows: (string | number)[][];
 }
 
+// Filter data to only include selected columns
+function filterColumns(data: ParsedData, config: ChartConfig): ParsedData {
+  const sel = config.selectedColumns;
+  if (!sel || sel.length === 0) return data;
+  // Always include col 0 (x/category), plus selected value columns
+  const indices = [0, ...sel.filter((i) => i > 0 && i < data.headers.length)];
+  return {
+    headers: indices.map((i) => data.headers[i]),
+    rows: data.rows.map((r) => indices.map((i) => r[i])),
+  };
+}
+
+// Sort data rows for bar charts
+function sortRows(data: ParsedData, sortData: string): ParsedData {
+  if (sortData === "none") return data;
+  const sorted = [...data.rows].sort((a, b) => {
+    const va = isNumeric(a[1]) ? toNumber(a[1]) : 0;
+    const vb = isNumeric(b[1]) ? toNumber(b[1]) : 0;
+    return sortData === "asc" ? va - vb : vb - va;
+  });
+  return { headers: data.headers, rows: sorted };
+}
+
+// Data label config helper
+function labelConfig(config: ChartConfig, position: string = "top"): object {
+  return {
+    show: config.showDataLabels,
+    fontSize: config.fontSize - 3,
+    fontFamily: config.fontFamily,
+    position,
+    color: config.backgroundColor !== "#ffffff" ? "#ccc" : "#555",
+  };
+}
+
+// Reference line markLine helper
+function referenceMarkLine(config: ChartConfig, axis: "yAxis" | "xAxis" = "yAxis"): object | undefined {
+  if (config.referenceLine == null) return undefined;
+  return {
+    silent: true,
+    symbol: "none",
+    lineStyle: { type: "dashed" as const, color: "#C75C2F", width: 1.5 },
+    label: {
+      formatter: config.referenceLineLabel || String(config.referenceLine),
+      fontSize: config.fontSize - 3,
+      color: config.backgroundColor !== "#ffffff" ? "#ddd" : "#444",
+    },
+    data: [{ [axis]: config.referenceLine }],
+  };
+}
+
+// DataZoom config helper
+function dataZoomConfig(config: ChartConfig): object[] | undefined {
+  if (!config.showDataZoom) return undefined;
+  const isDark = config.backgroundColor !== "#ffffff";
+  return [
+    { type: "inside" as const, start: 0, end: 100 },
+    {
+      type: "slider" as const,
+      start: 0,
+      end: 100,
+      height: 18,
+      bottom: 6,
+      borderColor: isDark ? "#444" : "#ddd",
+      backgroundColor: isDark ? "#2a2a2e" : "#f5f5f5",
+      fillerColor: isDark ? "rgba(78,148,163,0.25)" : "rgba(46,107,138,0.15)",
+      handleStyle: { color: isDark ? "#4F98A3" : "#2E6B8A" },
+    },
+  ];
+}
+
 // Nature-style base theme
 function getBaseOption(config: ChartConfig): EChartsOption {
   const isDark = config.backgroundColor !== "#ffffff";
@@ -33,7 +103,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
       left: 72,
       right: 32,
       top: config.title ? 56 : 32,
-      bottom: config.xAxisLabel ? 60 : 44,
+      bottom: (config.xAxisLabel ? 60 : 44) + (config.showDataZoom ? 36 : 0),
       containLabel: false,
     },
     tooltip: {
@@ -133,6 +203,7 @@ function toNumber(val: unknown): number {
 export function buildLineChart(data: ParsedData, config: ChartConfig): EChartsOption {
   const base = getBaseOption(config);
   const xData = data.rows.map((r) => r[0]);
+  const markLine = referenceMarkLine(config);
   const series = data.headers.slice(1).map((name, i) => ({
     name,
     type: "line" as const,
@@ -141,6 +212,9 @@ export function buildLineChart(data: ParsedData, config: ChartConfig): EChartsOp
     showSymbol: config.showSymbol,
     symbolSize: config.symbolSize,
     lineStyle: { width: config.lineWidth },
+    label: labelConfig(config),
+    stack: config.stacked ? "total" : undefined,
+    ...(i === 0 && markLine ? { markLine } : {}),
   }));
 
   return {
@@ -157,15 +231,15 @@ export function buildLineChart(data: ParsedData, config: ChartConfig): EChartsOp
       type: "value" as const,
       name: config.yAxisLabel,
     },
+    dataZoom: dataZoomConfig(config),
     series,
   };
 }
 
 export function buildScatterChart(data: ParsedData, config: ChartConfig): EChartsOption {
   const base = getBaseOption(config);
+  const markLine = referenceMarkLine(config);
 
-  // For scatter, we expect x, y pairs per series
-  // If 2 cols: one series; if 3+ cols: col 0=x, col1=y1, col2=y2...
   const series = data.headers.slice(1).map((name, i) => ({
     name,
     type: "scatter" as const,
@@ -173,6 +247,8 @@ export function buildScatterChart(data: ParsedData, config: ChartConfig): EChart
       .filter((r) => isNumeric(r[0]) && isNumeric(r[i + 1]))
       .map((r) => [toNumber(r[0]), toNumber(r[i + 1])]),
     symbolSize: config.symbolSize + 2,
+    label: labelConfig(config),
+    ...(i === 0 && markLine ? { markLine } : {}),
   }));
 
   return {
@@ -191,19 +267,25 @@ export function buildScatterChart(data: ParsedData, config: ChartConfig): EChart
       type: "value" as const,
       name: config.yAxisLabel,
     },
+    dataZoom: dataZoomConfig(config),
     series,
   };
 }
 
 export function buildBarChart(data: ParsedData, config: ChartConfig): EChartsOption {
   const base = getBaseOption(config);
-  const xData = data.rows.map((r) => r[0]);
-  const series = data.headers.slice(1).map((name, i) => ({
+  const sorted = sortRows(data, config.sortData);
+  const xData = sorted.rows.map((r) => r[0]);
+  const markLine = referenceMarkLine(config);
+  const series = sorted.headers.slice(1).map((name, i) => ({
     name,
     type: "bar" as const,
-    data: data.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : 0)),
+    data: sorted.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : 0)),
     barWidth: config.barWidth,
-    itemStyle: { borderRadius: [3, 3, 0, 0] },
+    itemStyle: { borderRadius: config.stacked ? [0, 0, 0, 0] : [3, 3, 0, 0] },
+    label: labelConfig(config),
+    stack: config.stacked ? "total" : undefined,
+    ...(i === 0 && markLine ? { markLine } : {}),
   }));
 
   return {
@@ -219,19 +301,25 @@ export function buildBarChart(data: ParsedData, config: ChartConfig): EChartsOpt
       type: "value" as const,
       name: config.yAxisLabel,
     },
+    dataZoom: dataZoomConfig(config),
     series,
   };
 }
 
 export function buildBarHChart(data: ParsedData, config: ChartConfig): EChartsOption {
   const base = getBaseOption(config);
-  const yData = data.rows.map((r) => r[0]);
-  const series = data.headers.slice(1).map((name, i) => ({
+  const sorted = sortRows(data, config.sortData);
+  const yData = sorted.rows.map((r) => r[0]);
+  const markLine = referenceMarkLine(config, "xAxis");
+  const series = sorted.headers.slice(1).map((name, i) => ({
     name,
     type: "bar" as const,
-    data: data.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : 0)),
+    data: sorted.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : 0)),
     barWidth: config.barWidth,
-    itemStyle: { borderRadius: [0, 3, 3, 0] },
+    itemStyle: { borderRadius: config.stacked ? [0, 0, 0, 0] : [0, 3, 3, 0] },
+    label: labelConfig(config, "right"),
+    stack: config.stacked ? "total" : undefined,
+    ...(i === 0 && markLine ? { markLine } : {}),
   }));
 
   return {
@@ -422,6 +510,7 @@ export function buildBoxplotChart(data: ParsedData, config: ChartConfig): EChart
 export function buildAreaChart(data: ParsedData, config: ChartConfig): EChartsOption {
   const base = getBaseOption(config);
   const xData = data.rows.map((r) => r[0]);
+  const markLine = referenceMarkLine(config);
   const series = data.headers.slice(1).map((name, i) => ({
     name,
     type: "line" as const,
@@ -431,6 +520,9 @@ export function buildAreaChart(data: ParsedData, config: ChartConfig): EChartsOp
     symbolSize: config.symbolSize,
     lineStyle: { width: config.lineWidth },
     areaStyle: { opacity: config.areaOpacity ?? 0.35 },
+    label: labelConfig(config),
+    stack: config.stacked ? "total" : undefined,
+    ...(i === 0 && markLine ? { markLine } : {}),
   }));
 
   return {
@@ -447,6 +539,7 @@ export function buildAreaChart(data: ParsedData, config: ChartConfig): EChartsOp
       type: "value" as const,
       name: config.yAxisLabel,
     },
+    dataZoom: dataZoomConfig(config),
     series,
   };
 }
@@ -759,9 +852,10 @@ export function buildViolinChart(data: ParsedData, config: ChartConfig): ECharts
 
 export function buildChart(
   chartType: ChartType,
-  data: ParsedData,
+  rawData: ParsedData,
   config: ChartConfig,
 ): EChartsOption {
+  const data = filterColumns(rawData, config);
   switch (chartType) {
     case "line":
       return buildLineChart(data, config);

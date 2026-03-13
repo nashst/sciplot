@@ -1,7 +1,9 @@
+import { memo } from "react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -9,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { chartTypes, chartTypeLabels, NATURE_COLORS, type ChartConfig, type ChartType } from "@shared/schema";
+import { chartTypes, chartTypeLabels, colorThemes, type ChartConfig, type ChartType } from "@shared/schema";
 import {
   LineChart,
   ScatterChart,
@@ -26,6 +28,7 @@ import {
 interface ChartConfigPanelProps {
   config: ChartConfig;
   onConfigChange: (config: ChartConfig) => void;
+  dataHeaders: string[];
 }
 
 const chartIcons: Record<ChartType, React.ReactNode> = {
@@ -41,10 +44,31 @@ const chartIcons: Record<ChartType, React.ReactNode> = {
   violin: <AudioWaveform className="w-4 h-4" />,
 };
 
-export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelProps) {
+const hasAxis = (t: ChartType) => !["pie", "radar", "heatmap", "boxplot", "violin"].includes(t);
+const hasStack = (t: ChartType) => ["bar", "barH", "line", "area"].includes(t);
+const hasSort = (t: ChartType) => ["bar", "barH"].includes(t);
+const hasRefLine = (t: ChartType) => ["line", "bar", "barH", "area", "scatter"].includes(t);
+
+export const ChartConfigPanel = memo(function ChartConfigPanel({
+  config,
+  onConfigChange,
+  dataHeaders,
+}: ChartConfigPanelProps) {
   const update = <K extends keyof ChartConfig>(key: K, value: ChartConfig[K]) => {
     onConfigChange({ ...config, [key]: value });
   };
+
+  const toggleColumn = (colIdx: number, checked: boolean) => {
+    const current = config.selectedColumns || [];
+    const next = checked
+      ? [...current, colIdx]
+      : current.filter((i) => i !== colIdx);
+    update("selectedColumns", next);
+  };
+
+  // Value columns (index 1+)
+  const valueHeaders = dataHeaders.slice(1);
+  const noColumnFilter = !config.selectedColumns || config.selectedColumns.length === 0;
 
   return (
     <div className="flex flex-col gap-5 text-sm">
@@ -71,6 +95,49 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
           ))}
         </div>
       </div>
+
+      {/* Column Selector */}
+      {valueHeaders.length > 1 && (
+        <div>
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
+            绘图字段
+          </Label>
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            {valueHeaders.map((h, i) => {
+              const colIdx = i + 1;
+              const isChecked = noColumnFilter || config.selectedColumns.includes(colIdx);
+              return (
+                <label key={colIdx} className="flex items-center gap-1.5 cursor-pointer">
+                  <Checkbox
+                    data-testid={`col-toggle-${colIdx}`}
+                    checked={isChecked}
+                    onCheckedChange={(checked) => {
+                      if (noColumnFilter) {
+                        // First click: select only this one (deselect means select all others)
+                        const allCols = valueHeaders.map((_, j) => j + 1);
+                        if (!checked) {
+                          update("selectedColumns", allCols.filter((c) => c !== colIdx));
+                        }
+                      } else {
+                        toggleColumn(colIdx, !!checked);
+                      }
+                    }}
+                  />
+                  <span className="text-xs truncate max-w-[100px]">{h}</span>
+                </label>
+              );
+            })}
+          </div>
+          {!noColumnFilter && (
+            <button
+              className="text-xs text-primary mt-1.5 hover:underline"
+              onClick={() => update("selectedColumns", [])}
+            >
+              全部显示
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Labels */}
       <div className="space-y-2">
@@ -125,6 +192,14 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
             />
           </div>
         )}
+        <div className="flex items-center justify-between">
+          <span className="text-xs">数值标签</span>
+          <Switch
+            data-testid="toggle-datalabels"
+            checked={config.showDataLabels}
+            onCheckedChange={(v) => update("showDataLabels", v)}
+          />
+        </div>
         {(config.chartType === "line" || config.chartType === "scatter" || config.chartType === "area") && (
           <>
             <div className="flex items-center justify-between">
@@ -167,7 +242,75 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
             </div>
           </>
         )}
+        {hasStack(config.chartType) && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs">堆叠</span>
+            <Switch
+              data-testid="toggle-stack"
+              checked={config.stacked}
+              onCheckedChange={(v) => update("stacked", v)}
+            />
+          </div>
+        )}
+        {hasAxis(config.chartType) && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs">数据缩放</span>
+            <Switch
+              data-testid="toggle-datazoom"
+              checked={config.showDataZoom}
+              onCheckedChange={(v) => update("showDataZoom", v)}
+            />
+          </div>
+        )}
       </div>
+
+      {/* Sort */}
+      {hasSort(config.chartType) && (
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            数据排序
+          </Label>
+          <Select value={config.sortData} onValueChange={(v) => update("sortData", v as "none" | "asc" | "desc")}>
+            <SelectTrigger data-testid="select-sort" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">默认</SelectItem>
+              <SelectItem value="asc">升序</SelectItem>
+              <SelectItem value="desc">降序</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Reference Line */}
+      {hasRefLine(config.chartType) && (
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            参考线
+          </Label>
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              data-testid="input-refline"
+              type="number"
+              placeholder="数值"
+              value={config.referenceLine ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                update("referenceLine", v === "" ? undefined : Number(v));
+              }}
+              className="h-8 text-xs tabular-nums"
+            />
+            <Input
+              data-testid="input-refline-label"
+              placeholder="标签"
+              value={config.referenceLineLabel}
+              onChange={(e) => update("referenceLineLabel", e.target.value)}
+              className="h-8 text-xs"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Size Controls */}
       {(config.chartType === "line" || config.chartType === "scatter" || config.chartType === "area" || config.chartType === "radar") && (
@@ -253,6 +396,37 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
         </div>
       </div>
 
+      {/* Color Theme */}
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          配色方案
+        </Label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {Object.entries(colorThemes).map(([key, theme]) => (
+            <button
+              key={key}
+              data-testid={`theme-${key}`}
+              className={`flex flex-col items-center gap-1 py-1.5 px-1 rounded-lg text-xs transition-all ${
+                config.colorTheme === key
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-accent/40 text-muted-foreground hover:bg-accent"
+              }`}
+              onClick={() => {
+                update("colorTheme", key);
+                update("colors", theme.colors);
+              }}
+            >
+              <div className="flex gap-0.5">
+                {theme.colors.slice(0, 4).map((c, i) => (
+                  <div key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: c }} />
+                ))}
+              </div>
+              <span className="leading-none">{theme.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Font */}
       <div className="space-y-2">
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -289,4 +463,4 @@ export function ChartConfigPanel({ config, onConfigChange }: ChartConfigPanelPro
       </div>
     </div>
   );
-}
+});

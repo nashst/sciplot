@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Upload, ClipboardPaste, Table, Trash2 } from "lucide-react";
@@ -10,7 +10,7 @@ interface DataEditorProps {
   onDataChange: (data: ParsedData) => void;
 }
 
-export function DataEditor({ data, onDataChange }: DataEditorProps) {
+export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataEditorProps) {
   const [mode, setMode] = useState<"paste" | "table">("table");
   const [pasteText, setPasteText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -249,4 +249,4 @@ export function DataEditor({ data, onDataChange }: DataEditorProps) {
       )}
     </div>
   );
-}
+});

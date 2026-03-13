@@ -1,10 +1,15 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { DataEditor } from "@/components/DataEditor";
 import { ChartConfigPanel } from "@/components/ChartConfig";
 import { ChartPreview } from "@/components/ChartPreview";
 import { PerplexityAttribution } from "@/components/PerplexityAttribution";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
 import { Database, Settings } from "lucide-react";
 import { getSampleData, type ParsedData } from "@/lib/chartEngine";
 import { defaultChartConfig, type ChartConfig, type ChartType } from "@shared/schema";
@@ -57,6 +62,9 @@ export default function Home() {
     });
   }, []);
 
+  // Extract data headers for column selector
+  const dataHeaders = useMemo(() => data.headers, [data.headers]);
+
   // Update background color when theme changes
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -104,54 +112,71 @@ export default function Home() {
         <ThemeToggle />
       </header>
 
-      {/* Main Layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Data + Config */}
-        <div className="w-[340px] border-r border-border flex flex-col shrink-0">
-          <Tabs defaultValue="data" className="flex flex-col flex-1 overflow-hidden">
-            <TabsList className="w-full rounded-none border-b border-border bg-transparent h-10 shrink-0">
-              <TabsTrigger
-                value="data"
-                data-testid="tab-data"
-                className="flex-1 rounded-none text-xs data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none"
-              >
-                <Database className="w-3.5 h-3.5 mr-1.5" />
-                数据
-              </TabsTrigger>
-              <TabsTrigger
-                value="config"
-                data-testid="tab-config"
-                className="flex-1 rounded-none text-xs data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none"
-              >
-                <Settings className="w-3.5 h-3.5 mr-1.5" />
-                参数
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="data" className="flex-1 overflow-hidden mt-0 p-3">
-              <DataEditor data={data} onDataChange={setData} />
-            </TabsContent>
-            <TabsContent value="config" className="flex-1 overflow-hidden mt-0">
-              <ScrollArea className="h-full">
-                <div className="p-3">
-                  <ChartConfigPanel
-                    config={config}
-                    onConfigChange={handleConfigChange}
-                  />
-                </div>
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
-        </div>
+      {/* Main Layout: Resizable Panels */}
+      <div className="flex-1 overflow-hidden">
+        <ResizablePanelGroup direction="horizontal" className="h-full">
+          {/* Left Panel: Data + Config */}
+          <ResizablePanel
+            defaultSize={28}
+            minSize={20}
+            maxSize={50}
+            className="flex flex-col"
+          >
+            <Tabs defaultValue="data" className="flex flex-col flex-1 overflow-hidden">
+              <TabsList className="w-full rounded-none border-b border-border bg-transparent h-10 shrink-0">
+                <TabsTrigger
+                  value="data"
+                  data-testid="tab-data"
+                  className="flex-1 rounded-none text-xs data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none"
+                >
+                  <Database className="w-3.5 h-3.5 mr-1.5" />
+                  数据
+                </TabsTrigger>
+                <TabsTrigger
+                  value="config"
+                  data-testid="tab-config"
+                  className="flex-1 rounded-none text-xs data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none"
+                >
+                  <Settings className="w-3.5 h-3.5 mr-1.5" />
+                  参数
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="data" className="flex-1 overflow-hidden mt-0 p-3">
+                <DataEditor data={data} onDataChange={setData} />
+              </TabsContent>
+              <TabsContent value="config" className="flex-1 overflow-hidden mt-0">
+                <ScrollArea className="h-full">
+                  <div className="p-3">
+                    <ChartConfigPanel
+                      config={config}
+                      onConfigChange={handleConfigChange}
+                      dataHeaders={dataHeaders}
+                    />
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+          </ResizablePanel>
 
-        {/* Right: Chart Preview */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 p-4 overflow-auto">
-            <ChartPreview data={data} config={config} />
-          </div>
-          <div className="px-4 pb-2">
-            <PerplexityAttribution />
-          </div>
-        </div>
+          {/* Drag Handle */}
+          <ResizableHandle withHandle />
+
+          {/* Right: Chart Preview */}
+          <ResizablePanel defaultSize={72} minSize={40}>
+            <div className="flex flex-col h-full overflow-hidden">
+              <div className="flex-1 p-4 overflow-auto">
+                <ChartPreview data={data} config={config} />
+              </div>
+              {/* Footer: Attribution */}
+              <div className="px-4 pb-2 flex items-center justify-between">
+                <PerplexityAttribution />
+                <span className="text-[10px] text-muted-foreground/60 select-none">
+                  Group Zhang, SICAU
+                </span>
+              </div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );

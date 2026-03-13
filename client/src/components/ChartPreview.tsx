@@ -1,4 +1,4 @@
-import { useRef, useCallback, useMemo } from "react";
+import { useRef, useCallback, useMemo, memo } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import {
@@ -19,6 +19,7 @@ import {
   VisualMapComponent,
   DataZoomComponent,
   RadarComponent,
+  MarkLineComponent,
 } from "echarts/components";
 import { CanvasRenderer, SVGRenderer } from "echarts/renderers";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ echarts.use([
   VisualMapComponent,
   DataZoomComponent,
   RadarComponent,
+  MarkLineComponent,
   CanvasRenderer,
   SVGRenderer,
 ]);
@@ -51,7 +53,7 @@ interface ChartPreviewProps {
   config: ChartConfig;
 }
 
-export function ChartPreview({ data, config }: ChartPreviewProps) {
+export const ChartPreview = memo(function ChartPreview({ data, config }: ChartPreviewProps) {
   const chartRef = useRef<ReactEChartsCore>(null);
 
   const option = useMemo(
@@ -178,4 +180,4 @@ export function ChartPreview({ data, config }: ChartPreviewProps) {
       </div>
     </div>
   );
-}
+});

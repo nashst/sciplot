@@ -41,6 +41,31 @@ export const NATURE_COLORS = [
   "#7A6B3A", // Dark Khaki
 ];
 
+// Color theme presets
+export const colorThemes: Record<string, { label: string; colors: string[] }> = {
+  nature: { label: "Nature", colors: NATURE_COLORS },
+  science: {
+    label: "Science",
+    colors: ["#3C5488", "#E64B35", "#00A087", "#F39B7F", "#4DBBD5", "#91D1C2", "#8491B4", "#B09C85"],
+  },
+  lancet: {
+    label: "Lancet",
+    colors: ["#00468B", "#ED0000", "#42B540", "#0099B4", "#925E9F", "#FDAF91", "#AD002A", "#ADB6B6"],
+  },
+  nejm: {
+    label: "NEJM",
+    colors: ["#BC3C29", "#0072B5", "#E18727", "#20854E", "#7876B1", "#6F99AD", "#FFDC91", "#EE4C97"],
+  },
+  pastel: {
+    label: "柔和",
+    colors: ["#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5"],
+  },
+  vibrant: {
+    label: "鲜艳",
+    colors: ["#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#A65628", "#F781BF", "#999999"],
+  },
+};
+
 export const chartConfigSchema = z.object({
   chartType: z.enum(chartTypes),
   title: z.string().default(""),
@@ -65,6 +90,15 @@ export const chartConfigSchema = z.object({
   areaOpacity: z.number().default(0.35),
   pieRoseType: z.boolean().default(false),
   pieDonut: z.boolean().default(false),
+  // New features
+  showDataLabels: z.boolean().default(false),
+  stacked: z.boolean().default(false),
+  sortData: z.enum(["none", "asc", "desc"]).default("none"),
+  colorTheme: z.string().default("nature"),
+  showDataZoom: z.boolean().default(false),
+  referenceLine: z.number().optional(),
+  referenceLineLabel: z.string().default(""),
+  selectedColumns: z.array(z.number()).default([]),
 });
 
 export type ChartConfig = z.infer<typeof chartConfigSchema>;
@@ -91,4 +125,11 @@ export const defaultChartConfig: ChartConfig = {
   areaOpacity: 0.35,
   pieRoseType: false,
   pieDonut: false,
+  showDataLabels: false,
+  stacked: false,
+  sortData: "none",
+  colorTheme: "nature",
+  showDataZoom: false,
+  referenceLineLabel: "",
+  selectedColumns: [],
 };
