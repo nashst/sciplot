@@ -169,7 +169,9 @@ export const ChartPreview = memo(function ChartPreview({ data, config }: ChartPr
         </div>
       </div>
       <div
-        className="flex-1 flex items-center justify-center rounded-lg border border-border bg-white dark:bg-[#1e1e22] overflow-hidden p-4 min-h-0"
+        className={`flex-1 flex items-center justify-center rounded-lg border border-border overflow-hidden p-4 min-h-0 ${
+          config.stylePreset === "academic" ? "bg-white" : "bg-white dark:bg-[#1e1e22]"
+        }`}
       >
         {hasData ? (
           <div style={containerStyle} className="flex items-center justify-center">

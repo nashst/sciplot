@@ -93,7 +93,7 @@ function labelConfig(config: ChartConfig, position: string = "top"): object {
     fontSize: config.fontSize - 3,
     fontFamily: config.fontFamily,
     position,
-    color: config.backgroundColor !== "#ffffff" ? "#ccc" : "#555",
+    color: (config.stylePreset === "academic") ? "#000" : (config.backgroundColor !== "#ffffff" ? "#ccc" : "#555"),
   };
 }
 
@@ -111,6 +111,44 @@ function referenceMarkLine(config: ChartConfig, axis: "yAxis" | "xAxis" = "yAxis
     },
     data: [{ [axis]: config.referenceLine }],
   };
+}
+
+// Basic stats helpers
+function getStats(vals: number[]) {
+  const n = vals.length;
+  if (n === 0) return { mean: 0, sd: 0, se: 0 };
+  const mean = vals.reduce((a, b) => a + b) / n;
+  const sd = Math.sqrt(vals.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / n);
+  const se = sd / Math.sqrt(n);
+  return { mean, sd, se };
+}
+
+// Linear regression helper
+function calculateLinearRegression(x: number[], y: number[]) {
+  const n = x.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += x[i];
+    sumY += y[i];
+    sumXY += x[i] * y[i];
+    sumX2 += x[i] * x[i];
+  }
+  const denominator = (n * sumX2 - sumX * sumX);
+  if (denominator === 0) return { slope: 0, intercept: 0, rSquared: 0 };
+  
+  const slope = (n * sumXY - sumX * sumY) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+  
+  // Calculate R-squared
+  const yMean = sumY / n;
+  let ssRes = 0, ssTot = 0;
+  for (let i = 0; i < n; i++) {
+    ssRes += Math.pow(y[i] - (slope * x[i] + intercept), 2);
+    ssTot += Math.pow(y[i] - yMean, 2);
+  }
+  const rSquared = n > 1 ? (1 - (ssRes / (ssTot || 1))) : 0;
+
+  return { slope, intercept, rSquared: Math.max(0, rSquared) };
 }
 
 // DataZoom config helper
@@ -136,8 +174,12 @@ function dataZoomConfig(config: ChartConfig): object[] | undefined {
 // Nature-style base theme
 function getBaseOption(config: ChartConfig): EChartsOption {
   const isDark = config.backgroundColor !== "#ffffff";
+  const preset = config.stylePreset || "default";
+  const isAcademic = preset === "academic";
+  const isClear = preset === "clear";
+
   const textColor = isDark ? "#D4D4D8" : "#333333";
-  const axisLineColor = isDark ? "#555" : "#333";
+  const axisLineColor = isAcademic ? "#000000" : (isDark ? "#555" : "#333");
   const splitLineColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
 
   return {
@@ -151,7 +193,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
             fontSize: config.fontSize + 2,
             fontWeight: 600,
             fontFamily: config.fontFamily,
-            color: textColor,
+            color: isAcademic ? "#000" : textColor,
           },
         }
       : undefined,
@@ -161,15 +203,19 @@ function getBaseOption(config: ChartConfig): EChartsOption {
       top: config.title ? 56 : 32,
       bottom: (config.xAxisLabel ? 60 : 44) + (config.showDataZoom ? 36 : 0),
       containLabel: false,
+      show: isAcademic ? true : config.showGrid,
+      borderWidth: isAcademic ? 1 : 0,
+      borderColor: "#000",
     },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: isDark ? "#2a2a2e" : "#fff",
-      borderColor: isDark ? "#444" : "#e5e5e5",
+      backgroundColor: isAcademic ? "#fff" : (isDark ? "#2a2a2e" : "#fff"),
+      borderColor: isAcademic ? "#000" : (isDark ? "#444" : "#e5e5e5"),
+      borderWidth: isAcademic ? 1 : 1,
       textStyle: {
         fontSize: 12,
         fontFamily: config.fontFamily,
-        color: textColor,
+        color: isAcademic ? "#000" : textColor,
       },
       extraCssText: "box-shadow: 0 2px 8px rgba(0,0,0,0.12); border-radius: 6px;",
     },
@@ -179,7 +225,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
           textStyle: {
             fontSize: config.fontSize - 2,
             fontFamily: config.fontFamily,
-            color: isDark ? "#aaa" : "#666",
+            color: isAcademic ? "#000" : (isDark ? "#aaa" : "#666"),
           },
           itemWidth: 16,
           itemHeight: 10,
@@ -189,47 +235,51 @@ function getBaseOption(config: ChartConfig): EChartsOption {
     color: config.colors.length ? config.colors : NATURE_COLORS,
     textStyle: {
       fontFamily: config.fontFamily,
-      color: textColor,
+      color: isAcademic ? "#000" : textColor,
     },
     xAxis: {
+      show: !isClear,
       nameTextStyle: {
         fontSize: config.fontSize - 1,
         fontFamily: config.fontFamily,
-        color: isDark ? "#999" : "#555",
+        color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
         padding: [8, 0, 0, 0],
       },
       axisLabel: {
         fontSize: config.fontSize - 2,
         fontFamily: config.fontFamily,
-        color: isDark ? "#999" : "#555",
+        color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
       },
       axisLine: {
-        lineStyle: { color: axisLineColor, width: 1.2 },
+        show: true,
+        lineStyle: { color: axisLineColor, width: isAcademic ? 1.5 : 1.2 },
       },
       axisTick: {
+        show: true,
         lineStyle: { color: axisLineColor },
         length: 4,
       },
       splitLine: {
-        show: config.showGrid,
+        show: config.showGrid && !isAcademic,
         lineStyle: { color: splitLineColor, type: "dashed" as const },
       },
     },
     yAxis: {
+      show: !isClear,
       nameTextStyle: {
         fontSize: config.fontSize - 1,
         fontFamily: config.fontFamily,
-        color: isDark ? "#999" : "#555",
+        color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
         padding: [0, 8, 0, 0],
       },
       axisLabel: {
         fontSize: config.fontSize - 2,
         fontFamily: config.fontFamily,
-        color: isDark ? "#999" : "#555",
+        color: isAcademic ? "#000" : (isDark ? "#999" : "#555"),
       },
       axisLine: {
         show: true,
-        lineStyle: { color: axisLineColor, width: 1.2 },
+        lineStyle: { color: axisLineColor, width: isAcademic ? 1.5 : 1.2 },
       },
       axisTick: {
         show: true,
@@ -237,7 +287,7 @@ function getBaseOption(config: ChartConfig): EChartsOption {
         length: 4,
       },
       splitLine: {
-        show: config.showGrid,
+        show: config.showGrid && !isAcademic,
         lineStyle: { color: splitLineColor, type: "dashed" as const },
       },
     },
@@ -260,18 +310,75 @@ export function buildLineChart(data: ParsedData, config: ChartConfig): EChartsOp
   const base = getBaseOption(config);
   const xData = data.rows.map((r) => r[0]);
   const markLine = referenceMarkLine(config);
-  const series = data.headers.slice(1).map((name, i) => ({
-    name,
-    type: "line" as const,
-    data: data.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : null)),
-    smooth: config.smooth,
-    showSymbol: config.showSymbol,
-    symbolSize: config.symbolSize,
-    lineStyle: { width: config.lineWidth },
-    label: labelConfig(config),
-    stack: config.stacked ? "total" : undefined,
-    ...(i === 0 && markLine ? { markLine } : {}),
-  }));
+  const allSeries: any[] = [];
+  const colors = base.color as string[];
+
+  data.headers.slice(1).forEach((name, i) => {
+    const colIdx = i + 1;
+    const yValues = data.rows.map((r) => (isNumeric(r[colIdx]) ? toNumber(r[colIdx]) : null));
+    const numericY = yValues.filter(v => v !== null) as number[];
+
+    allSeries.push({
+      name,
+      type: "line" as const,
+      data: yValues,
+      smooth: config.smooth,
+      showSymbol: config.showSymbol,
+      symbolSize: config.symbolSize,
+      lineStyle: { width: config.lineWidth },
+      label: labelConfig(config),
+      stack: config.stacked ? "total" : undefined,
+      ...(i === 0 && markLine ? { markLine } : {}),
+    });
+
+    // Trend Line
+    if (config.showTrendLine && numericY.length > 1) {
+      const trendX: number[] = [];
+      const trendY: number[] = [];
+      yValues.forEach((v, idx) => {
+        if (v !== null) {
+          trendX.push(idx);
+          trendY.push(v);
+        }
+      });
+      const { slope, intercept, rSquared } = calculateLinearRegression(trendX, trendY);
+      allSeries.push({
+        name: `${name} Trend (R²=${rSquared.toFixed(3)})`,
+        type: "line",
+        data: data.rows.map((_, idx) => slope * idx + intercept),
+        showSymbol: false,
+        lineStyle: { type: "dashed", width: 1.5, opacity: 0.6 },
+        color: colors[i % colors.length],
+        z: 2
+      });
+    }
+
+    // Error Bars (Global)
+    if (config.errorBarType && config.errorBarType !== "none" && numericY.length > 0) {
+      const stats = getStats(numericY);
+      const error = config.errorBarType === "sd" ? stats.sd : stats.se;
+      
+      allSeries.push({
+        type: "custom",
+        name: `${name} Error`,
+        renderItem: (params: any, api: any) => {
+           const x = api.coord([api.value(0), api.value(1)])[0];
+           const low = api.coord([0, api.value(1) - error])[1];
+           const high = api.coord([0, api.value(1) + error])[1];
+           return {
+             type: "group",
+             children: [
+               { type: "line", shape: { x1: x, y1: low, x2: x, y2: high }, style: api.style({ stroke: colors[i % colors.length], lineWidth: 1 }) },
+               { type: "line", shape: { x1: x - 4, y1: low, x2: x + 4, y2: low }, style: api.style({ stroke: colors[i % colors.length], lineWidth: 1 }) },
+               { type: "line", shape: { x1: x - 4, y1: high, x2: x + 4, y2: high }, style: api.style({ stroke: colors[i % colors.length], lineWidth: 1 }) }
+             ]
+           };
+        },
+        data: yValues.map((v, idx) => v !== null ? [idx, v] : null).filter(v => v !== null),
+        z: 3
+      });
+    }
+  });
 
   return {
     ...base,
@@ -288,24 +395,53 @@ export function buildLineChart(data: ParsedData, config: ChartConfig): EChartsOp
       name: config.yAxisLabel,
     },
     dataZoom: dataZoomConfig(config),
-    series,
+    series: allSeries,
   };
 }
 
 export function buildScatterChart(data: ParsedData, config: ChartConfig): EChartsOption {
   const base = getBaseOption(config);
   const markLine = referenceMarkLine(config);
+  const allSeries: any[] = [];
 
-  const series = data.headers.slice(1).map((name, i) => ({
-    name,
-    type: "scatter" as const,
-    data: data.rows
-      .filter((r) => isNumeric(r[0]) && isNumeric(r[i + 1]))
-      .map((r) => [toNumber(r[0]), toNumber(r[i + 1])]),
-    symbolSize: config.symbolSize + 2,
-    label: labelConfig(config),
-    ...(i === 0 && markLine ? { markLine } : {}),
-  }));
+  data.headers.slice(1).forEach((name, i) => {
+    const colIdx = i + 1;
+    const points = data.rows
+      .filter((r) => isNumeric(r[0]) && isNumeric(r[colIdx]))
+      .map((r) => [toNumber(r[0]), toNumber(r[colIdx])]);
+
+    allSeries.push({
+      name,
+      type: "scatter" as const,
+      data: points,
+      symbolSize: config.symbolSize + 2,
+      label: labelConfig(config),
+      ...(i === 0 && markLine ? { markLine } : {}),
+    });
+
+    // Trend Line logic
+    if (config.showTrendLine && points.length > 1) {
+      const xs = points.map(p => p[0]);
+      const ys = points.map(p => p[1]);
+      const { slope, intercept, rSquared } = calculateLinearRegression(xs, ys);
+      
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      
+      allSeries.push({
+        name: `${name} Trend (R²=${rSquared.toFixed(3)})`,
+        type: "line",
+        data: [
+          [minX, slope * minX + intercept],
+          [maxX, slope * maxX + intercept],
+        ],
+        showSymbol: false,
+        lineStyle: { type: "dashed", width: 1.5, opacity: 0.8 },
+        color: base.color ? (base.color as string[])[i % (base.color as string[]).length] : undefined,
+        z: 2,
+      });
+    }
+  });
 
   return {
     ...base,
@@ -324,7 +460,7 @@ export function buildScatterChart(data: ParsedData, config: ChartConfig): EChart
       name: config.yAxisLabel,
     },
     dataZoom: dataZoomConfig(config),
-    series,
+    series: allSeries,
   };
 }
 
@@ -333,16 +469,51 @@ export function buildBarChart(data: ParsedData, config: ChartConfig): EChartsOpt
   const sorted = sortRows(data, config.sortData);
   const xData = sorted.rows.map((r) => r[0]);
   const markLine = referenceMarkLine(config);
-  const series = sorted.headers.slice(1).map((name, i) => ({
-    name,
-    type: "bar" as const,
-    data: sorted.rows.map((r) => (isNumeric(r[i + 1]) ? toNumber(r[i + 1]) : 0)),
-    barWidth: config.barWidth,
-    itemStyle: { borderRadius: config.stacked ? [0, 0, 0, 0] : [3, 3, 0, 0] },
-    label: labelConfig(config),
-    stack: config.stacked ? "total" : undefined,
-    ...(i === 0 && markLine ? { markLine } : {}),
-  }));
+  const allSeries: any[] = [];
+  const colors = base.color as string[];
+
+  sorted.headers.slice(1).forEach((name, i) => {
+    const colIdx = i + 1;
+    const yValues = sorted.rows.map((r) => (isNumeric(r[colIdx]) ? toNumber(r[colIdx]) : 0));
+    const numericY = yValues.filter(v => v !== 0); // Assuming 0 is missing or just zero
+
+    allSeries.push({
+      name,
+      type: "bar" as const,
+      data: yValues,
+      barWidth: config.barWidth,
+      itemStyle: { borderRadius: config.stacked ? [0, 0, 0, 0] : [3, 3, 0, 0] },
+      label: labelConfig(config),
+      stack: config.stacked ? "total" : undefined,
+      ...(i === 0 && markLine ? { markLine } : {}),
+    });
+
+    // Error Bars (Global)
+    if (config.errorBarType && config.errorBarType !== "none" && numericY.length > 0) {
+      const stats = getStats(numericY);
+      const error = config.errorBarType === "sd" ? stats.sd : stats.se;
+      
+      allSeries.push({
+        type: "custom",
+        name: `${name} Error`,
+        renderItem: (params: any, api: any) => {
+           const x = api.coord([api.value(0), api.value(1)])[0];
+           const low = api.coord([0, api.value(1) - error])[1];
+           const high = api.coord([0, api.value(1) + error])[1];
+           return {
+             type: "group",
+             children: [
+               { type: "line", shape: { x1: x, y1: low, x2: x, y2: high }, style: api.style({ stroke: "#333", lineWidth: 1 }) },
+               { type: "line", shape: { x1: x - 4, y1: low, x2: x + 4, y2: low }, style: api.style({ stroke: "#333", lineWidth: 1 }) },
+               { type: "line", shape: { x1: x - 4, y1: high, x2: x + 4, y2: high }, style: api.style({ stroke: "#333", lineWidth: 1 }) }
+             ]
+           };
+        },
+        data: yValues.map((v, idx) => [idx, v]),
+        z: 3
+      });
+    }
+  });
 
   return {
     ...base,
@@ -358,7 +529,7 @@ export function buildBarChart(data: ParsedData, config: ChartConfig): EChartsOpt
       name: config.yAxisLabel,
     },
     dataZoom: dataZoomConfig(config),
-    series,
+    series: allSeries,
   };
 }
 
