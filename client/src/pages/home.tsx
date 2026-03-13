@@ -51,15 +51,27 @@ export default function Home() {
     ...defaultChartConfig,
   });
   const [data, setData] = useState<ParsedData>(() => getSampleData("line"));
+  const [isUserModified, setIsUserModified] = useState(false);
 
   const handleConfigChange = useCallback((newConfig: ChartConfig) => {
     setConfig((prev) => {
-      // If chart type changed, load sample data
-      if (newConfig.chartType !== prev.chartType) {
+      // If chart type changed, load sample data ONLY if user hasn't modified it
+      if (newConfig.chartType !== prev.chartType && !isUserModified) {
         setData(getSampleData(newConfig.chartType));
       }
       return newConfig;
     });
+  }, [isUserModified]);
+
+  const handleDataChange = useCallback((newData: ParsedData) => {
+    setData(newData);
+    setIsUserModified(true);
+    // Reset selections when new data is loaded
+    setConfig((prev) => ({ 
+      ...prev, 
+      selectedColumns: [],
+      xAxisColumn: 0 
+    }));
   }, []);
 
   // Extract data headers for column selector
@@ -142,7 +154,7 @@ export default function Home() {
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="data" className="flex-1 overflow-hidden mt-0 p-3">
-                <DataEditor data={data} onDataChange={setData} />
+                <DataEditor data={data} onDataChange={handleDataChange} />
               </TabsContent>
               <TabsContent value="config" className="flex-1 overflow-hidden mt-0">
                 <ScrollArea className="h-full">
@@ -151,6 +163,7 @@ export default function Home() {
                       config={config}
                       onConfigChange={handleConfigChange}
                       dataHeaders={dataHeaders}
+                      rawData={data}
                     />
                   </div>
                 </ScrollArea>

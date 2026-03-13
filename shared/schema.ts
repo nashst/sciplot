@@ -99,6 +99,7 @@ export const chartConfigSchema = z.object({
   referenceLine: z.number().optional(),
   referenceLineLabel: z.string().default(""),
   selectedColumns: z.array(z.number()).default([]),
+  xAxisColumn: z.number().default(0),
 });
 
 export type ChartConfig = z.infer<typeof chartConfigSchema>;
@@ -132,4 +133,5 @@ export const defaultChartConfig: ChartConfig = {
   showDataZoom: false,
   referenceLineLabel: "",
   selectedColumns: [],
+  xAxisColumn: 0,
 };

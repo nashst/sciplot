@@ -7,12 +7,68 @@ export interface ParsedData {
   rows: (string | number)[][];
 }
 
+export type ColumnType = "numeric" | "categorical";
+
+export function detectColumnTypes(data: ParsedData): ColumnType[] {
+  return data.headers.map((_, colIdx) => {
+    // Check first 20 rows to determine type
+    const sampleSize = Math.min(data.rows.length, 20);
+    let numericCount = 0;
+    for (let i = 0; i < sampleSize; i++) {
+        if (isNumeric(data.rows[i][colIdx])) numericCount++;
+    }
+    return numericCount / sampleSize > 0.8 ? "numeric" : "categorical";
+  });
+}
+
+export function recommendChartType(columnTypes: ColumnType[], config: ChartConfig): ChartType[] {
+    const xType = columnTypes[config.xAxisColumn];
+    const yIndices = config.selectedColumns || [];
+    const yTypes = yIndices.map(i => columnTypes[i]);
+    
+    const numY = yTypes.filter(t => t === "numeric").length;
+    const catY = yTypes.filter(t => t === "categorical").length;
+
+    if (yIndices.length === 0) return [];
+
+    const recs: ChartType[] = [];
+
+    // Logic based on selection
+    if (xType === "categorical") {
+        if (numY >= 1) recs.push("bar");
+        if (numY === 1) recs.push("pie");
+        if (numY > 1) recs.push("line"); // Multi-series bar/line
+    } else {
+        // Numeric X (e.g. Time or Value)
+        if (numY >= 1) recs.push("line", "scatter");
+        if (numY >= 1) recs.push("area");
+    }
+
+    // Special combinations
+    if (numY >= 3) recs.push("boxplot", "violin");
+    if (catY >= 3 && xType === "categorical") recs.push("radar");
+    if (numY >= 2 && xType === "numeric") recs.push("heatmap");
+
+    // Filter duplicates and return
+    return Array.from(new Set(recs));
+}
+
 // Filter data to only include selected columns
 function filterColumns(data: ParsedData, config: ChartConfig): ParsedData {
-  const sel = config.selectedColumns;
-  if (!sel || sel.length === 0) return data;
-  // Always include col 0 (x/category), plus selected value columns
-  const indices = [0, ...sel.filter((i) => i > 0 && i < data.headers.length)];
+  const xCol = config.xAxisColumn ?? 0;
+  const yCols = config.selectedColumns || [];
+  
+  // If no columns selected, return just the X column
+  if (yCols.length === 0) {
+    return { 
+      headers: [data.headers[xCol]], 
+      rows: data.rows.map(r => [r[xCol]]) 
+    };
+  }
+
+  // Combine X column with selected Y columns (filtering out X if it was accidentally in Y)
+  const indices = [xCol, ...yCols.filter(i => i !== xCol && i < data.headers.length)];
+  
   return {
     headers: indices.map((i) => data.headers[i]),
     rows: data.rows.map((r) => indices.map((i) => r[i])),

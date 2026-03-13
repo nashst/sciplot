@@ -1,9 +1,11 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -23,12 +25,16 @@ import {
   PieChart,
   Radar,
   AudioWaveform,
+  Sparkles,
+  ListFilter
 } from "lucide-react";
+import { detectColumnTypes, recommendChartType, type ParsedData } from "@/lib/chartEngine";
 
 interface ChartConfigPanelProps {
   config: ChartConfig;
   onConfigChange: (config: ChartConfig) => void;
   dataHeaders: string[];
+  rawData: ParsedData;
 }
 
 const chartIcons: Record<ChartType, React.ReactNode> = {
@@ -53,25 +59,52 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
   config,
   onConfigChange,
   dataHeaders,
+  rawData,
 }: ChartConfigPanelProps) {
   const update = <K extends keyof ChartConfig>(key: K, value: ChartConfig[K]) => {
     onConfigChange({ ...config, [key]: value });
   };
 
+  const colTypes = useMemo(() => detectColumnTypes(rawData), [rawData]);
+  const recommendations = useMemo(() => recommendChartType(colTypes, config), [colTypes, config]);
+
   const toggleColumn = (colIdx: number, checked: boolean) => {
     const current = config.selectedColumns || [];
     const next = checked
-      ? [...current, colIdx]
+      ? Array.from(new Set([...current, colIdx]))
       : current.filter((i) => i !== colIdx);
     update("selectedColumns", next);
   };
 
-  // Value columns (index 1+)
   const valueHeaders = dataHeaders.slice(1);
-  const noColumnFilter = !config.selectedColumns || config.selectedColumns.length === 0;
 
   return (
     <div className="flex flex-col gap-5 text-sm">
+      {/* Recommendations */}
+      {recommendations.length > 0 && (
+        <div className="bg-primary/5 rounded-xl p-3 border border-primary/10">
+          <div className="flex items-center gap-1.5 mb-2 text-primary">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">智能推荐</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {recommendations.map(t => (
+              <button
+                key={t}
+                onClick={() => update("chartType", t)}
+                className={`px-2 py-1 rounded-md text-[10px] border transition-all ${
+                  config.chartType === t 
+                  ? "bg-primary text-white border-primary" 
+                  : "bg-white text-muted-foreground border-border hover:border-primary/40"
+                }`}
+              >
+                {chartTypeLabels[t]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Chart Type */}
       <div>
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
@@ -90,54 +123,95 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
               onClick={() => update("chartType", t)}
             >
               {chartIcons[t]}
-              <span className="leading-none">{chartTypeLabels[t]}</span>
+              <span className="leading-none text-[10px]">{chartTypeLabels[t]}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Column Selector */}
-      {valueHeaders.length > 1 && (
-        <div>
-          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
-            绘图字段
+      {/* X-Axis Selector */}
+      <div>
+        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
+          X 轴解析字段 (维度)
+        </Label>
+        <Select 
+          value={String(config.xAxisColumn)} 
+          onValueChange={(v) => {
+            const idx = Number(v);
+            update("xAxisColumn", idx);
+            // Optionally remove from selected Y columns if it was there
+            update("selectedColumns", config.selectedColumns.filter(i => i !== idx));
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs bg-accent/20">
+            <SelectValue placeholder="选择 X 轴字段" />
+          </SelectTrigger>
+          <SelectContent>
+            {dataHeaders.map((h, i) => (
+              <SelectItem key={i} value={String(i)} className="text-xs">
+                {h} <span className="text-[10px] opacity-50 ml-1">({colTypes[i] === "numeric" ? "Num" : "Cat"})</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Column Selector - Upgraded (Y-Axis / Series) */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+           <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            绘图数据字段 (指标/系列)
           </Label>
-          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
-            {valueHeaders.map((h, i) => {
-              const colIdx = i + 1;
-              const isChecked = noColumnFilter || config.selectedColumns.includes(colIdx);
+          <div className="flex gap-2">
+            <button 
+              onClick={() => update("selectedColumns", dataHeaders.map((_, i) => i).filter(i => i !== config.xAxisColumn))}
+              className="text-[10px] text-primary hover:underline font-medium"
+            >
+              全选
+            </button>
+            <button 
+              onClick={() => update("selectedColumns", dataHeaders.map((_, i) => i).filter(i => i !== config.xAxisColumn && colTypes[i] === "numeric"))}
+              className="text-[10px] text-primary hover:underline font-medium"
+            >
+              仅数值
+            </button>
+            <button 
+              onClick={() => update("selectedColumns", [])}
+              className="text-[10px] text-muted-foreground hover:underline font-medium"
+            >
+              清空
+            </button>
+          </div>
+        </div>
+        
+        <ScrollArea className="h-[140px] rounded-md border border-border p-2 bg-accent/20">
+          <div className="flex flex-col gap-1.5">
+            {dataHeaders.map((h, i) => {
+              // Hide the current X-axis column from the Y-axis list
+              if (i === config.xAxisColumn) return null;
+              
+              const isChecked = config.selectedColumns.includes(i);
+              const type = colTypes[i];
               return (
-                <label key={colIdx} className="flex items-center gap-1.5 cursor-pointer">
-                  <Checkbox
-                    data-testid={`col-toggle-${colIdx}`}
-                    checked={isChecked}
-                    onCheckedChange={(checked) => {
-                      if (noColumnFilter) {
-                        // First click: select only this one (deselect means select all others)
-                        const allCols = valueHeaders.map((_, j) => j + 1);
-                        if (!checked) {
-                          update("selectedColumns", allCols.filter((c) => c !== colIdx));
-                        }
-                      } else {
-                        toggleColumn(colIdx, !!checked);
-                      }
-                    }}
-                  />
-                  <span className="text-xs truncate max-w-[100px]">{h}</span>
-                </label>
+                <div key={i} className="flex items-center justify-between group">
+                  <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={(checked) => toggleColumn(i, !!checked)}
+                    />
+                    <span className={`text-xs truncate ${isChecked ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                      {h}
+                    </span>
+                  </label>
+                  <Badge variant="outline" className={`text-[9px] h-4 px-1 leading-none ${type === "numeric" ? "text-blue-500 border-blue-500/30" : "text-orange-500 border-orange-500/30"}`}>
+                    {type === "numeric" ? "Num" : "Cat"}
+                  </Badge>
+                </div>
               );
             })}
           </div>
-          {!noColumnFilter && (
-            <button
-              className="text-xs text-primary mt-1.5 hover:underline"
-              onClick={() => update("selectedColumns", [])}
-            >
-              全部显示
-            </button>
-          )}
-        </div>
-      )}
+        </ScrollArea>
+      </div>
 
       {/* Labels */}
       <div className="space-y-2">

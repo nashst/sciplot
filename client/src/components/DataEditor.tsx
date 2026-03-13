@@ -13,7 +13,16 @@ interface DataEditorProps {
 export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataEditorProps) {
   const [mode, setMode] = useState<"paste" | "table">("table");
   const [pasteText, setPasteText] = useState("");
+  const [page, setPage] = useState(1);
+  const rowsPerPage = 50;
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const totalPages = Math.max(1, Math.ceil(data.rows.length / rowsPerPage));
+  const currentPageRows = data.rows.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+
+  const handlePageChange = (newPage: number) => {
+    setPage(Math.min(Math.max(1, newPage), totalPages));
+  };
 
   const handlePaste = useCallback(() => {
     if (!pasteText.trim()) return;
@@ -21,6 +30,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
     if (parsed.headers.length > 0) {
       onDataChange(parsed);
       setMode("table");
+      setPage(1);
     }
   }, [pasteText, onDataChange]);
 
@@ -33,6 +43,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
         if (parsed.headers.length > 0) {
           onDataChange(parsed);
           setMode("table");
+          setPage(1);
         }
       } catch (err) {
         console.error(err);
@@ -44,25 +55,31 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
 
   const handleCellEdit = useCallback(
     (ri: number, ci: number, value: string) => {
+      // Adjusted ri for global index if it's a row edit
+      const globalRi = ri === 0 ? 0 : (page - 1) * rowsPerPage + (ri - 1);
+      
       if (ri === 0) {
         // Header edit
         const newHeaders = [...data.headers];
         newHeaders[ci] = value;
         onDataChange({ ...data, headers: newHeaders });
       } else {
-        const newRows = data.rows.map((r) => [...r]);
+        const newRows = [...data.rows];
         const trimmed = value.trim();
         const num = Number(trimmed);
-        newRows[ri - 1][ci] = trimmed === "" ? "" : isNaN(num) ? trimmed : num;
+        newRows[globalRi] = [...newRows[globalRi]];
+        newRows[globalRi][ci] = trimmed === "" ? "" : isNaN(num) ? trimmed : num;
         onDataChange({ ...data, rows: newRows });
       }
     },
-    [data, onDataChange],
+    [data, onDataChange, page],
   );
 
   const addRow = useCallback(() => {
     const newRow = data.headers.map(() => "" as string | number);
     onDataChange({ ...data, rows: [...data.rows, newRow] });
+    // Go to last page
+    setPage(Math.ceil((data.rows.length + 1) / rowsPerPage));
   }, [data, onDataChange]);
 
   const addColumn = useCallback(() => {
@@ -72,11 +89,15 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
   }, [data, onDataChange]);
 
   const deleteRow = useCallback(
-    (ri: number) => {
-      const newRows = data.rows.filter((_, i) => i !== ri);
+    (localRi: number) => {
+      const globalRi = (page - 1) * rowsPerPage + localRi;
+      const newRows = data.rows.filter((_, i) => i !== globalRi);
       onDataChange({ ...data, rows: newRows });
+      if (page > Math.ceil(newRows.length / rowsPerPage)) {
+        setPage(Math.max(1, page - 1));
+      }
     },
-    [data, onDataChange],
+    [data, onDataChange, page],
   );
 
   const deleteColumn = useCallback(
@@ -91,6 +112,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
 
   const clearData = useCallback(() => {
     onDataChange({ headers: ["X", "Y"], rows: [["", ""]] });
+    setPage(1);
   }, [onDataChange]);
 
   return (
@@ -174,77 +196,107 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
           </Button>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto border rounded-lg">
-          <table className="w-full text-xs">
-            <thead>
-              <tr>
-                <th className="w-8 p-1 bg-muted text-muted-foreground text-center font-medium sticky top-0 z-10">
-                  #
-                </th>
-                {data.headers.map((h, ci) => (
-                  <th key={ci} className="relative bg-muted sticky top-0 z-10">
-                    <input
-                      data-testid={`header-${ci}`}
-                      className="w-full px-2 py-1.5 bg-transparent text-center font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary/40 min-w-[90px]"
-                      value={h}
-                      onChange={(e) => handleCellEdit(0, ci, e.target.value)}
-                    />
-                    {data.headers.length > 1 && (
-                      <button
-                        className="absolute top-0 right-0 p-0.5 text-muted-foreground/50 hover:text-destructive opacity-0 hover:opacity-100 transition-opacity"
-                        onClick={() => deleteColumn(ci)}
-                      >
-                        ×
-                      </button>
-                    )}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden border rounded-lg">
+          <div className="flex-1 overflow-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr>
+                  <th className="w-8 p-1 bg-muted text-muted-foreground text-center font-medium sticky top-0 z-10">
+                    #
                   </th>
-                ))}
-                <th className="w-8 bg-muted sticky top-0 z-10">
-                  <button
-                    data-testid="btn-add-col"
-                    className="w-full h-full text-muted-foreground hover:text-primary transition-colors font-bold"
-                    onClick={addColumn}
-                  >
-                    +
-                  </button>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((row, ri) => (
-                <tr key={ri} className="border-t border-border/50 hover:bg-accent/30">
-                  <td className="p-1 text-center text-muted-foreground font-mono tabular-nums">
-                    {ri + 1}
-                  </td>
-                  {row.map((cell, ci) => (
-                    <td key={ci} className="p-0">
+                  {data.headers.map((h, ci) => (
+                    <th key={ci} className="relative bg-muted sticky top-0 z-10">
                       <input
-                        data-testid={`cell-${ri}-${ci}`}
-                        className="w-full px-2 py-1 bg-transparent text-center outline-none focus:ring-1 focus:ring-primary/40 tabular-nums min-w-[90px]"
-                        value={String(cell ?? "")}
-                        onChange={(e) => handleCellEdit(ri + 1, ci, e.target.value)}
+                        data-testid={`header-${ci}`}
+                        className="w-full px-2 py-1.5 bg-transparent text-center font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary/40 min-w-[90px]"
+                        value={h}
+                        onChange={(e) => handleCellEdit(0, ci, e.target.value)}
                       />
-                    </td>
+                      {data.headers.length > 1 && (
+                        <button
+                          className="absolute top-0 right-0 p-0.5 text-muted-foreground/50 hover:text-destructive opacity-0 hover:opacity-100 transition-opacity"
+                          onClick={() => deleteColumn(ci)}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </th>
                   ))}
-                  <td className="p-0 w-8">
+                  <th className="w-8 bg-muted sticky top-0 z-10">
                     <button
-                      className="w-full py-1 text-muted-foreground/40 hover:text-destructive text-xs"
-                      onClick={() => deleteRow(ri)}
+                      data-testid="btn-add-col"
+                      className="w-full h-full text-muted-foreground hover:text-primary transition-colors font-bold"
+                      onClick={addColumn}
                     >
-                      ×
+                      +
                     </button>
-                  </td>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <button
-            data-testid="btn-add-row"
-            className="w-full py-1.5 text-xs text-muted-foreground hover:text-primary hover:bg-accent/40 transition-colors border-t border-border/50"
-            onClick={addRow}
-          >
-            + 添加行
-          </button>
+              </thead>
+              <tbody>
+                {currentPageRows.map((row, ri) => {
+                  const globalIdx = (page - 1) * rowsPerPage + ri;
+                  return (
+                    <tr key={globalIdx} className="border-t border-border/50 hover:bg-accent/30">
+                      <td className="p-1 text-center text-muted-foreground font-mono tabular-nums">
+                        {globalIdx + 1}
+                      </td>
+                      {row.map((cell, ci) => (
+                        <td key={ci} className="p-0">
+                          <input
+                            data-testid={`cell-${globalIdx}-${ci}`}
+                            className="w-full px-2 py-1 bg-transparent text-center outline-none focus:ring-1 focus:ring-primary/40 tabular-nums min-w-[90px]"
+                            value={String(cell ?? "")}
+                            onChange={(e) => handleCellEdit(ri + 1, ci, e.target.value)}
+                          />
+                        </td>
+                      ))}
+                      <td className="p-0 w-8">
+                        <button
+                          className="w-full py-1 text-muted-foreground/40 hover:text-destructive text-xs"
+                          onClick={() => deleteRow(ri)}
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between px-3 py-2 border-t bg-muted/30 shrink-0">
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                disabled={page === 1}
+                onClick={() => handlePageChange(page - 1)}
+              >
+                &lt;
+              </Button>
+              <span className="flex items-center px-2 text-[10px] text-muted-foreground whitespace-nowrap">
+                第 {page} / {totalPages} 页 (共 {data.rows.length} 行)
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                disabled={page === totalPages}
+                onClick={() => handlePageChange(page + 1)}
+              >
+                &gt;
+              </Button>
+            </div>
+            <button
+              data-testid="btn-add-row"
+              className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
+              onClick={addRow}
+            >
+              + 添加行
+            </button>
+          </div>
         </div>
       )}
     </div>

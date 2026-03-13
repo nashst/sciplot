@@ -1,11 +1,12 @@
 import Papa from "papaparse";
 import type { ParsedData } from "./chartEngine";
 
-export function parseCSVText(text: string): ParsedData {
+export function parseCSVText(text: string, delimiter?: string): ParsedData {
   const result = Papa.parse(text.trim(), {
     header: false,
     skipEmptyLines: true,
     dynamicTyping: true,
+    delimiter: delimiter || "",
   });
 
   if (!result.data || result.data.length < 2) {
@@ -20,19 +21,10 @@ export function parseCSVText(text: string): ParsedData {
 }
 
 export function parseTSVText(text: string): ParsedData {
-  // Convert TSV to CSV then parse
-  const csvText = text
-    .split("\n")
-    .map((line) => line.split("\t").join(","))
-    .join("\n");
-  return parseCSVText(csvText);
+  return parseCSVText(text, "\t");
 }
 
 export function autoDetectAndParse(text: string): ParsedData {
-  const firstLine = text.split("\n")[0] || "";
-  if (firstLine.includes("\t")) {
-    return parseTSVText(text);
-  }
   return parseCSVText(text);
 }
 
