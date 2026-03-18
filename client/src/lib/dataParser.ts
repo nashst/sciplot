@@ -1,5 +1,51 @@
 import Papa from "papaparse";
+import { read, utils } from "xlsx";
 import type { ParsedData } from "./chartEngine";
+
+export type DataChangeReason =
+  | "upload"
+  | "paste"
+  | "formula"
+  | "reset"
+  | "cell-edit"
+  | "header-edit"
+  | "add-row"
+  | "add-column"
+  | "delete-row"
+  | "delete-column";
+
+export interface DataChangeMeta {
+  reason: DataChangeReason;
+  fileName?: string;
+}
+
+function normalizeCellValue(value: unknown): string | number {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "number" || typeof value === "string") return value;
+  return String(value);
+}
+
+function normalizeHeaderName(rawHeader: unknown, index: number): string {
+  const name = String(rawHeader ?? "").trim();
+  return name || `Column ${index + 1}`;
+}
+
+function normalizeTableRows(table: unknown[][]): ParsedData {
+  if (!table.length) return { headers: [], rows: [] };
+
+  const headers = table[0].map((cell, index) => normalizeHeaderName(cell, index));
+  const rows = table
+    .slice(1)
+    .map((row) => row.map((cell) => normalizeCellValue(cell)))
+    .filter((row) => row.some((cell) => String(cell).trim() !== ""));
+
+  if (!headers.length || rows.length === 0) {
+    return { headers: [], rows: [] };
+  }
+
+  return { headers, rows };
+}
 
 export function parseCSVText(text: string, delimiter?: string): ParsedData {
   const result = Papa.parse(text.trim(), {
@@ -14,10 +60,7 @@ export function parseCSVText(text: string, delimiter?: string): ParsedData {
   }
 
   const allRows = result.data as (string | number)[][];
-  const headers = allRows[0].map((h) => String(h));
-  const rows = allRows.slice(1);
-
-  return { headers, rows };
+  return normalizeTableRows(allRows);
 }
 
 export function parseTSVText(text: string): ParsedData {
@@ -28,26 +71,47 @@ export function autoDetectAndParse(text: string): ParsedData {
   return parseCSVText(text);
 }
 
-export function parseFile(file: File): Promise<ParsedData> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      if (!text) {
-        reject(new Error("文件读取失败"));
-        return;
-      }
-
-      const ext = file.name.toLowerCase().split(".").pop();
-      if (ext === "tsv" || ext === "txt") {
-        resolve(parseTSVText(text));
-      } else {
-        resolve(autoDetectAndParse(text));
-      }
-    };
-    reader.onerror = () => reject(new Error("文件读取错误"));
-    reader.readAsText(file);
+async function parseXlsxFile(file: File): Promise<ParsedData> {
+  const buffer = await file.arrayBuffer();
+  const workbook = read(buffer, {
+    type: "array",
+    cellDates: true,
+    cellNF: false,
+    cellText: false,
   });
+
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) return { headers: [], rows: [] };
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  if (!worksheet) return { headers: [], rows: [] };
+
+  const table = utils.sheet_to_json(worksheet, {
+    header: 1,
+    defval: "",
+    blankrows: false,
+    raw: true,
+  }) as unknown[][];
+
+  return normalizeTableRows(table);
+}
+
+export async function parseFile(file: File): Promise<ParsedData> {
+  const ext = file.name.toLowerCase().split(".").pop();
+  if (ext === "xlsx" || ext === "xls") {
+    return parseXlsxFile(file);
+  }
+
+  const text = await file.text();
+  if (!text) {
+    throw new Error("File read failed");
+  }
+
+  if (ext === "tsv" || ext === "txt") {
+    return parseTSVText(text);
+  }
+
+  return autoDetectAndParse(text);
 }
 
 export function dataToCSVString(data: ParsedData): string {
@@ -74,8 +138,9 @@ export function gridToData(grid: string[][]): ParsedData {
       const trimmed = cell.trim();
       if (trimmed === "") return "";
       const num = Number(trimmed);
-      return isNaN(num) ? trimmed : num;
+      return Number.isNaN(num) ? trimmed : num;
     }),
   );
   return { headers, rows };
 }
+

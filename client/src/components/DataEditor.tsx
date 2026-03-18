@@ -3,20 +3,34 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Upload, ClipboardPaste, Table, Trash2 } from "lucide-react";
-import { autoDetectAndParse, parseFile, dataToCSVString } from "@/lib/dataParser";
+import {
+  autoDetectAndParse,
+  parseFile,
+  dataToCSVString,
+  type DataChangeMeta,
+} from "@/lib/dataParser";
 import type { ParsedData } from "@/lib/chartEngine";
 
 interface DataEditorProps {
   data: ParsedData;
-  onDataChange: (data: ParsedData) => void;
+  onDataChange: (data: ParsedData, meta?: DataChangeMeta) => void;
 }
 
 export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataEditorProps) {
   const [mode, setMode] = useState<"paste" | "table">("table");
   const [pasteText, setPasteText] = useState("");
   const [page, setPage] = useState(1);
+  const [showFormula, setShowFormula] = useState(false);
+  const [formula, setFormula] = useState("");
   const rowsPerPage = 50;
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const emitChange = useCallback(
+    (nextData: ParsedData, meta: DataChangeMeta) => {
+      onDataChange(nextData, meta);
+    },
+    [onDataChange],
+  );
 
   const totalPages = Math.max(1, Math.ceil(data.rows.length / rowsPerPage));
   const currentPageRows = data.rows.slice((page - 1) * rowsPerPage, page * rowsPerPage);
@@ -29,11 +43,11 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
     if (!pasteText.trim()) return;
     const parsed = autoDetectAndParse(pasteText);
     if (parsed.headers.length > 0) {
-      onDataChange(parsed);
+      emitChange(parsed, { reason: "paste" });
       setMode("table");
       setPage(1);
     }
-  }, [pasteText, onDataChange]);
+  }, [emitChange, pasteText]);
 
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,7 +56,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
       try {
         const parsed = await parseFile(file);
         if (parsed.headers.length > 0) {
-          onDataChange(parsed);
+          emitChange(parsed, { reason: "upload", fileName: file.name });
           setMode("table");
           setPage(1);
         }
@@ -51,54 +65,51 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
       }
       e.target.value = "";
     },
-    [onDataChange],
+    [emitChange],
   );
 
   const handleCellEdit = useCallback(
     (ri: number, ci: number, value: string) => {
-      // Adjusted ri for global index if it's a row edit
       const globalRi = ri === 0 ? 0 : (page - 1) * rowsPerPage + (ri - 1);
-      
+
       if (ri === 0) {
-        // Header edit
         const newHeaders = [...data.headers];
         newHeaders[ci] = value;
-        onDataChange({ ...data, headers: newHeaders });
+        emitChange({ ...data, headers: newHeaders }, { reason: "header-edit" });
       } else {
         const newRows = [...data.rows];
         const trimmed = value.trim();
         const num = Number(trimmed);
         newRows[globalRi] = [...newRows[globalRi]];
-        newRows[globalRi][ci] = trimmed === "" ? "" : isNaN(num) ? trimmed : num;
-        onDataChange({ ...data, rows: newRows });
+        newRows[globalRi][ci] = trimmed === "" ? "" : Number.isNaN(num) ? trimmed : num;
+        emitChange({ ...data, rows: newRows }, { reason: "cell-edit" });
       }
     },
-    [data, onDataChange, page],
+    [data, emitChange, page],
   );
 
   const addRow = useCallback(() => {
     const newRow = data.headers.map(() => "" as string | number);
-    onDataChange({ ...data, rows: [...data.rows, newRow] });
-    // Go to last page
+    emitChange({ ...data, rows: [...data.rows, newRow] }, { reason: "add-row" });
     setPage(Math.ceil((data.rows.length + 1) / rowsPerPage));
-  }, [data, onDataChange]);
+  }, [data, emitChange]);
 
   const addColumn = useCallback(() => {
     const newHeaders = [...data.headers, `Col ${data.headers.length + 1}`];
     const newRows = data.rows.map((r) => [...r, ""]);
-    onDataChange({ headers: newHeaders, rows: newRows });
-  }, [data, onDataChange]);
+    emitChange({ headers: newHeaders, rows: newRows }, { reason: "add-column" });
+  }, [data, emitChange]);
 
   const deleteRow = useCallback(
     (localRi: number) => {
       const globalRi = (page - 1) * rowsPerPage + localRi;
       const newRows = data.rows.filter((_, i) => i !== globalRi);
-      onDataChange({ ...data, rows: newRows });
+      emitChange({ ...data, rows: newRows }, { reason: "delete-row" });
       if (page > Math.ceil(newRows.length / rowsPerPage)) {
         setPage(Math.max(1, page - 1));
       }
     },
-    [data, onDataChange, page],
+    [data, emitChange, page],
   );
 
   const deleteColumn = useCallback(
@@ -106,54 +117,48 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
       if (data.headers.length <= 1) return;
       const newHeaders = data.headers.filter((_, i) => i !== ci);
       const newRows = data.rows.map((r) => r.filter((_, i) => i !== ci));
-      onDataChange({ headers: newHeaders, rows: newRows });
+      emitChange({ headers: newHeaders, rows: newRows }, { reason: "delete-column" });
     },
-    [data, onDataChange],
+    [data, emitChange],
   );
-
-  const [showFormula, setShowFormula] = useState(false);
-  const [formula, setFormula] = useState("");
 
   const applyFormula = useCallback(() => {
     if (!formula.trim()) return;
     try {
       const newHeaders = [...data.headers, `New Col ${data.headers.length + 1}`];
       const newRows = data.rows.map((row) => {
-        // Replace $1, $2 with row[0], row[1] etc.
-        let expr = formula.replace(/\$(\d+)/g, (_, n) => `(row[${parseInt(n) - 1}] || 0)`);
-        
-        // Also support $HeaderName (simplified, only strictly alpha-numeric headers)
+        let expr = formula.replace(/\$(\d+)/g, (_, n) => `(row[${parseInt(n, 10) - 1}] || 0)`);
+
         data.headers.forEach((h, i) => {
-            const safeH = h.replace(/[^a-zA-Z0-9]/g, "");
-            if (safeH) {
-              expr = expr.replace(new RegExp(`\\$${safeH}`, 'g'), `(row[${i}] || 0)`);
-            }
+          const safeH = h.replace(/[^a-zA-Z0-9]/g, "");
+          if (safeH) {
+            expr = expr.replace(new RegExp(`\\$${safeH}`, "g"), `(row[${i}] || 0)`);
+          }
         });
 
-        // Add Math. prefix to common functions
-        ["log", "exp", "sin", "cos", "abs", "sqrt"].forEach(f => {
-           expr = expr.replace(new RegExp(`\\b${f}\\(`, 'g'), `Math.${f}(`);
+        ["log", "exp", "sin", "cos", "abs", "sqrt"].forEach((f) => {
+          expr = expr.replace(new RegExp(`\\b${f}\\(`, "g"), `Math.${f}(`);
         });
 
         try {
           const val = eval(expr);
-          return [...row, isFinite(val) ? (Math.round(val * 1000000) / 1000000) : ""];
-        } catch (e) {
+          return [...row, isFinite(val) ? Math.round(val * 1000000) / 1000000 : ""];
+        } catch {
           return [...row, ""];
         }
       });
-      onDataChange({ headers: newHeaders, rows: newRows });
+      emitChange({ headers: newHeaders, rows: newRows }, { reason: "formula" });
       setShowFormula(false);
       setFormula("");
-    } catch (err) {
+    } catch {
       alert("公式语法错误");
     }
-  }, [formula, data, onDataChange]);
+  }, [data, emitChange, formula]);
 
   const clearData = useCallback(() => {
-    onDataChange({ headers: ["X", "Y"], rows: [["", ""]] });
+    emitChange({ headers: ["X", "Y"], rows: [["", ""]] }, { reason: "reset" });
     setPage(1);
-  }, [onDataChange]);
+  }, [emitChange]);
 
   return (
     <div className="flex flex-col gap-3 h-full">
@@ -192,9 +197,14 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
           variant="outline"
           size="sm"
           onClick={() => setShowFormula(!showFormula)}
-          className={`text-xs h-7 ${showFormula ? 'bg-primary/10 border-primary text-primary' : ''}`}
+          className={`text-xs h-7 ${showFormula ? "bg-primary/10 border-primary text-primary" : ""}`}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="m18 3-3 3-3-3"/><path d="M3 21h18"/><path d="M3 7h3.5L10 16.5 13.5 7H17"/><path d="M12 21v-4"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+            <path d="m18 3-3 3-3-3" />
+            <path d="M3 21h18" />
+            <path d="M3 7h3.5L10 16.5 13.5 7H17" />
+            <path d="M12 21v-4" />
+          </svg>
           公式
         </Button>
         <Button
@@ -219,7 +229,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv,.tsv,.txt"
+          accept=".csv,.tsv,.txt,.xls,.xlsx"
           className="hidden"
           onChange={handleFileUpload}
         />
@@ -227,19 +237,21 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
 
       {showFormula && (
         <div className="bg-primary/5 p-2 rounded-md border border-primary/20 animate-in slide-in-from-top-1 duration-200">
-           <div className="flex gap-2">
-              <Input 
-                value={formula}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormula(e.target.value)}
-                placeholder="公式，如: $1 + $2 或 log($1)"
-                className="h-8 text-xs bg-white"
-              />
-              <Button onClick={applyFormula} size="sm" className="h-8 px-3 text-xs">执行</Button>
-           </div>
-           <p className="text-[10px] text-muted-foreground mt-1.5 px-1 flex gap-2">
-             <span>支持: $1, $2 (列序号)</span>
-             <span>函数: log, exp, sin, sqrt</span>
-           </p>
+          <div className="flex gap-2">
+            <Input
+              value={formula}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormula(e.target.value)}
+              placeholder="公式，例如: $1 + $2 或 log($1)"
+              className="h-8 text-xs bg-white"
+            />
+            <Button onClick={applyFormula} size="sm" className="h-8 px-3 text-xs">
+              执行
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1.5 px-1 flex gap-2">
+            <span>支持: $1, $2 (列序号)</span>
+            <span>函数: log, exp, sin, sqrt</span>
+          </p>
         </div>
       )}
 
@@ -247,17 +259,12 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
         <div className="flex flex-col gap-2 flex-1">
           <Textarea
             data-testid="paste-input"
-            placeholder={"粘贴 CSV 或 TSV 数据\n例如：\nTime,Value A,Value B\n0,1.0,2.0\n1,2.5,3.1"}
+            placeholder={"粘贴 CSV 或 TSV 数据\n例如:\nTime,Value A,Value B\n0,1.0,2.0\n1,2.5,3.1"}
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             className="flex-1 font-mono text-xs resize-none min-h-[200px]"
           />
-          <Button
-            data-testid="btn-parse"
-            onClick={handlePaste}
-            size="sm"
-            className="self-end"
-          >
+          <Button data-testid="btn-parse" onClick={handlePaste} size="sm" className="self-end">
             解析数据
           </Button>
         </div>
@@ -343,7 +350,7 @@ export const DataEditor = memo(function DataEditor({ data, onDataChange }: DataE
                 &lt;
               </Button>
               <span className="flex items-center px-2 text-[10px] text-muted-foreground whitespace-nowrap">
-                第 {page} / {totalPages} 页 (共 {data.rows.length} 行)
+                第 {page} / {totalPages} 页（共 {data.rows.length} 行）
               </span>
               <Button
                 variant="ghost"

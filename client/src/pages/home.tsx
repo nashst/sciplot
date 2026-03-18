@@ -9,9 +9,17 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { Database, Settings } from "lucide-react";
+import { Database, Settings, Sparkles } from "lucide-react";
 import { getSampleData, type ParsedData } from "@/lib/chartEngine";
-import { defaultChartConfig, type ChartConfig, type ChartType } from "@shared/schema";
+import { defaultChartConfig, type ChartConfig } from "@shared/schema";
+import {
+  type DataChangeMeta,
+} from "@/lib/dataParser";
+import {
+  buildAutoInsightText,
+  buildDatasetProfile,
+  recommendVisualization,
+} from "@/lib/autoInsights";
 
 function ThemeToggle() {
   const [dark, setDark] = useState(() =>
@@ -51,6 +59,47 @@ export default function Home() {
   });
   const [data, setData] = useState<ParsedData>(() => getSampleData("line"));
   const [isUserModified, setIsUserModified] = useState(false);
+  const [autoInsight, setAutoInsight] = useState(
+    "Upload CSV/XLSX data to get an automatic chart recommendation.",
+  );
+
+  const applySmartConfig = useCallback((nextData: ParsedData) => {
+    const profile = buildDatasetProfile(nextData);
+    const recommendation = recommendVisualization(profile);
+    const safeXAxis = Math.min(
+      recommendation.xAxisIndex,
+      Math.max(0, nextData.headers.length - 1),
+    );
+    const safeYColumns = recommendation.yAxisIndices.filter(
+      (index) => index >= 0 && index < nextData.headers.length && index !== safeXAxis,
+    );
+    const xAxisLabel = nextData.headers[safeXAxis] || "X";
+    const yAxisLabel = safeYColumns.length
+      ? safeYColumns.map((index) => nextData.headers[index]).join(", ")
+      : "Value";
+
+    setConfig((prev) => ({
+      ...prev,
+      chartType: recommendation.chartType,
+      xAxisColumn: safeXAxis,
+      selectedColumns: safeYColumns,
+      xAxisLabel,
+      yAxisLabel,
+    }));
+
+    setAutoInsight(buildAutoInsightText(profile, recommendation));
+  }, []);
+
+  const sanitizeConfigForData = useCallback((nextData: ParsedData) => {
+    const maxIndex = Math.max(0, nextData.headers.length - 1);
+    setConfig((prev) => ({
+      ...prev,
+      xAxisColumn: Math.min(prev.xAxisColumn, maxIndex),
+      selectedColumns: prev.selectedColumns.filter(
+        (index) => index <= maxIndex && index !== Math.min(prev.xAxisColumn, maxIndex),
+      ),
+    }));
+  }, []);
 
   const handleConfigChange = useCallback((newConfig: ChartConfig) => {
     setConfig((prev) => {
@@ -62,16 +111,32 @@ export default function Home() {
     });
   }, [isUserModified]);
 
-  const handleDataChange = useCallback((newData: ParsedData) => {
+  const handleDataChange = useCallback((newData: ParsedData, meta?: DataChangeMeta) => {
     setData(newData);
     setIsUserModified(true);
-    // Reset selections when new data is loaded
-    setConfig((prev) => ({ 
-      ...prev, 
-      selectedColumns: [],
-      xAxisColumn: 0 
-    }));
-  }, []);
+
+    if (meta?.reason === "upload" || meta?.reason === "paste") {
+      applySmartConfig(newData);
+      return;
+    }
+
+    sanitizeConfigForData(newData);
+
+    if (meta?.reason === "reset") {
+      setAutoInsight("Upload CSV/XLSX data to get an automatic chart recommendation.");
+      return;
+    }
+
+    if (
+      meta?.reason === "add-row" ||
+      meta?.reason === "add-column" ||
+      meta?.reason === "delete-row" ||
+      meta?.reason === "delete-column" ||
+      meta?.reason === "formula"
+    ) {
+      setAutoInsight("Dataset changed. Import again to refresh smart recommendation.");
+    }
+  }, [applySmartConfig, sanitizeConfigForData]);
 
   // Extract data headers for column selector
   const dataHeaders = useMemo(() => data.headers, [data.headers]);
@@ -169,6 +234,14 @@ export default function Home() {
         </div>
         <ThemeToggle />
       </header>
+
+      <div className="px-4 pt-3">
+        <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="font-medium text-foreground/90">Auto insight</span>
+          <span className="truncate">{autoInsight}</span>
+        </div>
+      </div>
 
       {/* Main Layout: Resizable Panels */}
       <div className="flex-1 overflow-hidden">
