@@ -324,7 +324,7 @@ export const ChartPreview = memo(function ChartPreview({
               ref={chartRef}
               echarts={echarts}
               option={option}
-              style={{ width: "100%", height: "100%", minHeight: isEditorMode ? 520 : (compactLayout ? 280 : 340) }}
+              style={{ width: "100%", height: "100%", minHeight: isEditorMode ? 420 : (compactLayout ? 280 : 340) }}
               opts={{ renderer: "canvas" }}
               notMerge
               lazyUpdate

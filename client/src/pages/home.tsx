@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { autoDetectAndParse, parseFile } from "@/lib/dataParser";
 import { buildDatasetProfile, type DatasetProfile } from "@/lib/autoInsights";
+import { buildProfilingSummary } from "@/lib/profilingInsights";
 import { getSampleData, type ParsedData } from "@/lib/chartEngine";
 import {
   inferColumns,
@@ -12,7 +13,7 @@ import {
   type InferredColumn,
 } from "@/lib/analysisEngine";
 import { defaultChartConfig, type ChartConfig, type ChartType, chartTypeLabels } from "@shared/schema";
-import { ArrowDownToLine, LayoutGrid, Play, Sparkles, Upload, WandSparkles } from "lucide-react";
+import { ArrowDownToLine, FlaskConical, LayoutGrid, Play, Sparkles, Upload, WandSparkles } from "lucide-react";
 
 const AutoChartGallery = lazy(async () => {
   const mod = await import("@/components/AutoChartGallery");
@@ -193,6 +194,35 @@ export default function Home() {
   const numericCount = inferredColumns.filter((column) => column.type === "number").length;
   const datetimeCount = inferredColumns.filter((column) => column.type === "datetime").length;
   const categoryCount = inferredColumns.filter((column) => column.type === "category").length;
+  const profilingSummary = useMemo(() => buildProfilingSummary(data, inferredColumns), [data, inferredColumns]);
+  const profilingPanel = useMemo(
+    () => ({
+      missingCells: profilingSummary.missingCells,
+      missingRate: profilingSummary.missingRate,
+      duplicateRows: profilingSummary.duplicateRows,
+      duplicateRate: profilingSummary.duplicateRate,
+      constantColumns: profilingSummary.constantColumns,
+      numericHighlights: profilingSummary.numericProfiles.slice(0, 8).map((item) => ({
+        name: item.name,
+        mean: item.mean,
+        std: item.std,
+        min: item.min,
+        max: item.max,
+        missingRate: item.missingRate,
+      })),
+      categoryHighlights: profilingSummary.categoricalProfiles.slice(0, 8).map((item) => ({
+        name: item.name,
+        uniqueCount: item.uniqueCount,
+        missingRate: item.missingRate,
+        topValues: item.topValues.map((top) => `${top.label} (${top.count})`),
+      })),
+      correlationHighlights: profilingSummary.correlations.slice(0, 8).map((item) => ({
+        pair: `${item.leftName} × ${item.rightName}`,
+        value: item.value,
+      })),
+    }),
+    [profilingSummary],
+  );
 
   const recommendations = useMemo<RecommendationCard[]>(
     () =>
@@ -390,13 +420,20 @@ export default function Home() {
   const selectedCandidate = selectedChartId ? candidateMap.get(selectedChartId) ?? null : null;
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(89,118,157,0.10),_transparent_34%),linear-gradient(180deg,_#f7f9fc_0%,_#eef3f8_100%)] text-slate-900">
+    <div className="min-h-[100dvh] bg-[radial-gradient(circle_at_top,_rgba(89,118,157,0.10),_transparent_34%),linear-gradient(180deg,_#f7f9fc_0%,_#eef3f8_100%)] text-slate-900">
       <header className="z-40 border-b border-slate-200/70 bg-white/78 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-4 px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white"><LayoutGrid className="h-5 w-5" /></div>
             <div><div className="text-sm font-semibold">SciPlot</div><div className="text-xs text-slate-500">中文优先 · 轻量科研出图</div></div>
           </div>
+          <nav className="hidden items-center gap-2 rounded-full bg-slate-100/80 px-3 py-1 text-sm text-slate-500 md:flex">
+            <span className={stage === "entry" ? "font-semibold text-slate-800" : ""}>导入入口层</span>
+            <span>→</span>
+            <span className={stage === "workspace" ? "font-semibold text-slate-800" : ""}>workspace</span>
+            <span>→</span>
+            <span>导出</span>
+          </nav>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setStage("entry")} className="hidden sm:inline-flex">返回导入</Button>
             <Button variant="outline" size="sm" onClick={() => exportWorkspaceSnapshot(data, config, analysisGoal)} disabled={!hasData}><ArrowDownToLine className="mr-1.5 h-4 w-4" />导出配置</Button>
@@ -408,25 +445,86 @@ export default function Home() {
       <input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt,.xls,.xlsx" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleFileImport(file); event.target.value = ""; }} />
 
       {stage === "entry" ? (
-        <main className="mx-auto flex h-full w-full max-w-[1200px] flex-col justify-center gap-4 px-4">
-          <section className="rounded-3xl bg-white/90 p-6 ring-1 ring-slate-200/80">
-            <h1 className="text-3xl font-semibold">上传表格，自动生成可读图表</h1>
-            <p className="mt-2 text-sm text-slate-600">先浏览自动探索，再进入下方单图编辑区精修。</p>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <Button onClick={() => fileInputRef.current?.click()} className="h-12 bg-slate-950 text-white hover:bg-slate-800"><Upload className="mr-2 h-4 w-4" />上传 CSV/XLSX</Button>
-              <Button variant="outline" onClick={() => loadSample(analysisGoal)} className="h-12"><Play className="mr-2 h-4 w-4" />加载示例数据</Button>
-              <Button variant="outline" onClick={() => setShowPastePanel((v) => !v)} className="h-12"><WandSparkles className="mr-2 h-4 w-4" />粘贴数据</Button>
-            </div>
-            {showPastePanel ? (
-              <div className="mt-4 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200/70">
-                <Textarea value={pasteText} onChange={(event) => setPasteText(event.target.value)} placeholder={"Time,ValueA,ValueB\n0,1.2,2.3\n1,1.8,2.9"} className="min-h-32 resize-none border-slate-200 bg-white font-mono text-xs" />
-                <div className="mt-3 flex justify-end"><Button onClick={handleEntryPaste} className="bg-slate-950 text-white hover:bg-slate-800">解析并进入 workspace</Button></div>
+        <main className="mx-auto flex min-h-[calc(100dvh-73px)] w-full max-w-[1680px] items-center px-4 py-6 xl:px-6">
+          <section className="grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_520px] lg:gap-10">
+            <div className="mx-auto w-full max-w-[620px] lg:mx-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-xs text-slate-600">
+                <FlaskConical className="h-3.5 w-3.5" />
+                轻量 · 中文优先 · 自动首图
               </div>
-            ) : null}
+              <h1 className="mt-6 text-5xl font-semibold leading-[1.15] tracking-tight text-slate-950">上传表格，自动得到适合科研阅读的图。</h1>
+              <p className="mt-5 text-lg leading-8 text-slate-700">
+                先选分析目标，再让系统根据字段类型自动推荐图表；你仍然可以随时改字段、改样式、换推荐。
+              </p>
+              <div className="mt-6 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+                <div className="rounded-full border border-slate-200/80 bg-white/80 px-4 py-2 text-center">CSV / XLSX 直接导入</div>
+                <div className="rounded-full border border-slate-200/80 bg-white/80 px-4 py-2 text-center">示例数据一键进入工作区</div>
+                <div className="rounded-full border border-slate-200/80 bg-white/80 px-4 py-2 text-center">粘贴小表格，秒级解析</div>
+              </div>
+            </div>
+
+            <div className="w-full space-y-3">
+              <article className="rounded-3xl bg-white/95 p-5 ring-1 ring-slate-200/80">
+                <div className="text-sm text-slate-500">导入一</div>
+                <div className="mt-1 text-4xl font-semibold text-slate-950">上传 CSV / XLSX</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">选择本地表格后自动识别表头、字段类型和分析目标。</p>
+                <div className="mt-3">
+                  <Button onClick={() => fileInputRef.current?.click()} className="h-10 rounded-xl bg-slate-950 px-4 text-white hover:bg-slate-800">
+                    <Upload className="mr-2 h-4 w-4" />
+                    选择文件
+                  </Button>
+                </div>
+              </article>
+
+              <article className="rounded-3xl bg-slate-950 p-5 text-slate-100 ring-1 ring-slate-900/80">
+                <div className="text-sm text-slate-400">导入二</div>
+                <div className="mt-1 text-4xl font-semibold">加载示例数据</div>
+                <p className="mt-2 text-sm leading-6 text-slate-300">先用示例进入 workspace，再替换成真实数据。</p>
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="rounded-full bg-slate-800 px-2 py-1">分布</span>
+                    <span className="rounded-full bg-slate-800 px-2 py-1">趋势</span>
+                    <span className="rounded-full bg-slate-800 px-2 py-1">关系</span>
+                    <span className="rounded-full bg-slate-800 px-2 py-1">对比</span>
+                  </div>
+                  <Button variant="secondary" onClick={() => loadSample(analysisGoal)} className="h-10 rounded-xl border border-slate-700 bg-slate-800 px-4 text-slate-100 hover:bg-slate-700">
+                    <Play className="mr-2 h-4 w-4" />
+                    进入
+                  </Button>
+                </div>
+              </article>
+
+              <article className="rounded-3xl bg-white/95 p-5 ring-1 ring-slate-200/80">
+                <div className="text-sm text-slate-500">导入三</div>
+                <div className="mt-1 text-4xl font-semibold text-slate-950">粘贴数据</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">直接粘贴 CSV / TSV 内容，适合临时处理小表格。</p>
+                {showPastePanel ? (
+                  <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200/70">
+                    <Textarea
+                      value={pasteText}
+                      onChange={(event) => setPasteText(event.target.value)}
+                      placeholder={"Time,ValueA,ValueB\n0,1.2,2.3\n1,1.8,2.9"}
+                      className="min-h-28 resize-none border-slate-200 bg-white font-mono text-xs"
+                    />
+                    <div className="mt-2 flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => setShowPastePanel(false)} className="h-9 border-slate-200 text-slate-700">取消</Button>
+                      <Button onClick={handleEntryPaste} className="h-9 bg-slate-950 text-white hover:bg-slate-800">解析并进入 workspace</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <Button variant="outline" onClick={() => setShowPastePanel(true)} className="h-10 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50">
+                      <WandSparkles className="mr-2 h-4 w-4" />
+                      打开粘贴面板
+                    </Button>
+                  </div>
+                )}
+              </article>
+            </div>
           </section>
         </main>
       ) : (
-        <main className="mx-auto h-full w-full max-w-[1680px] overflow-y-auto px-4 py-4 xl:px-6">
+        <main className="mx-auto w-full max-w-[1680px] px-4 py-4 xl:px-6">
           <div className="space-y-6 pb-10">
             <section className="rounded-2xl bg-white/92 p-4 ring-1 ring-slate-200/80">
               <div className="flex items-center justify-between gap-3">
@@ -446,6 +544,7 @@ export default function Home() {
               <AutoChartGallery
                 data={data}
                 datasetSummary={{ rowCount: data.rows.length, columnCount: data.headers.length, numericCount, datetimeCount, categoryCount }}
+                profilingPanel={profilingPanel}
                 groupedCandidates={groupedCandidates}
                 onEditChart={handleEditChart}
                 onQuickExport={handleQuickExport}
@@ -457,7 +556,7 @@ export default function Home() {
               <div className="rounded-2xl bg-white/92 p-4 ring-1 ring-slate-200/80"><div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">编辑区</div><h2 className="mt-1 text-2xl font-semibold">单图精修</h2></div>
               {selectedCandidate ? (
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_360px]">
-                  <div className="min-h-[560px]">
+                  <div className="min-h-0">
                     <Suspense fallback={<div className="rounded-2xl bg-white/90 p-8 ring-1 ring-slate-200/80">正在加载图表预览...</div>}>
                       <ChartPreview
                         data={data}
@@ -471,7 +570,7 @@ export default function Home() {
                       />
                     </Suspense>
                   </div>
-                  <div className="min-h-[560px]">
+                  <div className="min-h-0">
                     <Suspense fallback={<div className="rounded-2xl bg-white/90 p-8 ring-1 ring-slate-200/80">正在加载编辑控件...</div>}>
                       <ChartEditorPanel
                         config={config}
