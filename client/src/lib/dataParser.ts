@@ -1,11 +1,9 @@
 import Papa from "papaparse";
-import { read, utils } from "xlsx";
 import type { ParsedData } from "./chartEngine";
 
 export type DataChangeReason =
   | "upload"
   | "paste"
-  | "formula"
   | "reset"
   | "cell-edit"
   | "header-edit"
@@ -72,6 +70,7 @@ export function autoDetectAndParse(text: string): ParsedData {
 }
 
 async function parseXlsxFile(file: File): Promise<ParsedData> {
+  const { read, utils } = await import("xlsx");
   const buffer = await file.arrayBuffer();
   const workbook = read(buffer, {
     type: "array",

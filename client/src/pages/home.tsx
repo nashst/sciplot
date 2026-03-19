@@ -1,9 +1,6 @@
-﻿import { useCallback, useMemo, useRef, useState } from "react";
+﻿import { Suspense, lazy, useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { DataEditor } from "@/components/DataEditor";
-import { ChartConfigPanel } from "@/components/ChartConfig";
-import { ChartPreview } from "@/components/ChartPreview";
 import { defaultChartConfig, type ChartConfig, type ChartType, chartTypeLabels } from "@shared/schema";
 import { autoDetectAndParse, parseFile, type DataChangeMeta } from "@/lib/dataParser";
 import { buildDatasetProfile, type DatasetProfile } from "@/lib/autoInsights";
@@ -17,6 +14,20 @@ import {
   WandSparkles,
 } from "lucide-react";
 
+const DataEditor = lazy(async () => {
+  const mod = await import("@/components/DataEditor");
+  return { default: mod.DataEditor };
+});
+
+const ChartConfigPanel = lazy(async () => {
+  const mod = await import("@/components/ChartConfig");
+  return { default: mod.ChartConfigPanel };
+});
+
+const ChartPreview = lazy(async () => {
+  const mod = await import("@/components/ChartPreview");
+  return { default: mod.ChartPreview };
+});
 type AnalysisGoal = "distribution" | "trend" | "relationship" | "comparison";
 type AppStage = "entry" | "workspace";
 
@@ -140,7 +151,7 @@ function buildGoalColumns(profile: DatasetProfile, goal: AnalysisGoal): GoalColu
         reason: `当前数据里 ${column?.name ?? "数值列"} 最适合先看分布，直方图能最快暴露离群值和偏态。`,
       };
     }
-    return fallback("当前缺少合适的数值字段，先用最稳妥的默认图。    ");
+    return fallback("当前缺少合适的数值字段，先用最稳妥的默认图。");
   }
 
   if (goal === "trend") {
@@ -164,7 +175,7 @@ function buildGoalColumns(profile: DatasetProfile, goal: AnalysisGoal): GoalColu
         reason: `没有显式时间列时，可以先把第一个数值字段当作顺序轴，使用折线图查看变化。`,
       };
     }
-    return fallback("当前数据不够像时间序列，先用通用默认图。    ");
+    return fallback("当前数据不够像时间序列，先用通用默认图。");
   }
 
   if (goal === "relationship") {
@@ -188,7 +199,7 @@ function buildGoalColumns(profile: DatasetProfile, goal: AnalysisGoal): GoalColu
         reason: `当前只有一个明确数值字段，先看它的分布，再决定下一步关系图。`,
       };
     }
-    return fallback("当前还没有足够的数值字段，先用默认图过渡。    ");
+    return fallback("当前还没有足够的数值字段，先用默认图过渡。");
   }
 
   if (goal === "comparison") {
@@ -213,10 +224,20 @@ function buildGoalColumns(profile: DatasetProfile, goal: AnalysisGoal): GoalColu
         reason: `如果暂时没有分类列，可以先用箱线图查看数值的整体分布。`,
       };
     }
-    return fallback("当前没有适合分组比较的字段，先用默认图继续。    ");
+    return fallback("当前没有适合分组比较的字段，先用默认图继续。");
   }
 
-  return fallback("使用默认配置作为起点。    ");
+  return fallback("使用默认配置作为起点。");
+}
+
+function dedupeRecommendations(items: RecommendationCard[]): RecommendationCard[] {
+  const unique = new Map<ChartType, RecommendationCard>();
+  items.forEach((item) => {
+    if (!unique.has(item.chartType)) {
+      unique.set(item.chartType, item);
+    }
+  });
+  return Array.from(unique.values()).slice(0, 4);
 }
 
 function buildRecommendations(profile: DatasetProfile, goal: AnalysisGoal): RecommendationCard[] {
@@ -367,7 +388,7 @@ function buildRecommendations(profile: DatasetProfile, goal: AnalysisGoal): Reco
     );
   }
 
-  return items.filter((item): item is RecommendationCard => Boolean(item));
+  return dedupeRecommendations(items.filter((item): item is RecommendationCard => Boolean(item)));
 }
 
 function buildStatusText(profile: DatasetProfile, goal: AnalysisGoal, recommendation: GoalColumns) {
@@ -409,7 +430,7 @@ export default function Home() {
   const [config, setConfig] = useState<ChartConfig>({ ...defaultChartConfig });
   const [pasteText, setPasteText] = useState("");
   const [showPastePanel, setShowPastePanel] = useState(false);
-  const [statusText, setStatusText] = useState("上传 CSV/XLSX、使用示例数据，或直接粘贴表格即可开始。 ");
+  const [statusText, setStatusText] = useState("上传 CSV/XLSX、使用示例数据，或直接粘贴表格即可开始。");
 
   const profile = useMemo(() => buildDatasetProfile(data), [data]);
   const defaultGoal = useMemo(() => inferGoalFromData(data), [data]);
@@ -463,7 +484,7 @@ export default function Home() {
     try {
       const parsed = await parseFile(file);
       if (!parsed.headers.length || !parsed.rows.length) {
-        setStatusText("文件已读取，但没有找到可用的数据表。请检查表头和空行。 ");
+        setStatusText("文件已读取，但没有找到可用的数据表。请检查表头和空行。");
         return;
       }
       const nextGoal = inferGoalFromData(parsed);
@@ -472,18 +493,18 @@ export default function Home() {
       setPasteText("");
     } catch (error) {
       console.error(error);
-      setStatusText("导入失败：文件无法解析。请确认是有效的 CSV / XLSX 文件。 ");
+      setStatusText("导入失败：文件无法解析。请确认是有效的 CSV / XLSX 文件。");
     }
   }, [applyGoalPlan]);
 
   const handleEntryPaste = useCallback(() => {
     if (!pasteText.trim()) {
-      setStatusText("请先粘贴 CSV 或 TSV 表格内容。 ");
+      setStatusText("请先粘贴 CSV 或 TSV 表格内容。");
       return;
     }
     const parsed = autoDetectAndParse(pasteText);
     if (!parsed.headers.length || !parsed.rows.length) {
-      setStatusText("粘贴内容没有形成有效表格，请检查分隔符和表头。 ");
+      setStatusText("粘贴内容没有形成有效表格，请检查分隔符和表头。");
       return;
     }
     const nextGoal = inferGoalFromData(parsed);
@@ -495,7 +516,7 @@ export default function Home() {
     setData(nextData);
 
     if (!nextData.headers.length || !nextData.rows.length) {
-      setStatusText("当前数据为空，建议重新导入示例或上传文件。 ");
+      setStatusText("当前数据为空，建议重新导入示例或上传文件。");
       return;
     }
 
@@ -506,7 +527,7 @@ export default function Home() {
     }
 
     syncConfigForData(nextData);
-    setStatusText("数据已更新，右侧建议会按当前字段重新计算。 ");
+    setStatusText("数据已更新，右侧建议会按当前字段重新计算。");
   }, [analysisGoal, applyGoalPlan, syncConfigForData]);
 
   const handleGoalChange = useCallback((goal: AnalysisGoal) => {
@@ -533,7 +554,7 @@ export default function Home() {
     setStage("entry");
     setPasteText("");
     setShowPastePanel(false);
-    setStatusText("已重置视图。你可以重新上传、粘贴或载入示例数据。 ");
+    setStatusText("已重置视图。你可以重新上传、粘贴或载入示例数据。");
   }, [defaultGoal]);
 
   const loadSample = useCallback((goal: AnalysisGoal = analysisGoal) => {
@@ -547,8 +568,8 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(89,118,157,0.10),_transparent_34%),linear-gradient(180deg,_#f7f9fc_0%,_#eef3f8_100%)] text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/78 backdrop-blur-xl">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(89,118,157,0.10),_transparent_34%),linear-gradient(180deg,_#f7f9fc_0%,_#eef3f8_100%)] text-slate-900">
+      <header className="z-40 border-b border-slate-200/70 bg-white/78 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-4 px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm shadow-slate-950/10">
@@ -596,48 +617,48 @@ export default function Home() {
       />
 
       {stage === "entry" ? (
-        <main className="mx-auto flex min-h-[calc(100vh-72px)] w-full max-w-[1400px] flex-col justify-center px-4 py-8 lg:px-6">
-          <section className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-            <div className="space-y-6">
-              <div className="space-y-4">
+        <main className="entry-tight mx-auto flex h-full min-h-0 w-full max-w-[1400px] flex-col justify-center px-4 py-4 lg:px-6">
+          <section className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm shadow-slate-950/5 ring-1 ring-slate-200/80">
                   <FlaskConical className="h-3.5 w-3.5 text-slate-700" />
                   轻量 · 中文优先 · 自动首图
                 </div>
                 <div>
-                  <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">
+                  <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
                     上传表格，自动得到适合科研阅读的图。
                   </h1>
-                  <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
+                  <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
                     先选分析目标，再让系统根据字段类型自动推荐图表；你仍然可以随时改字段、改样式、换推荐。
                   </p>
                 </div>
               </div>
 
-              <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+              <div className="entry-chip-row grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
                 {[
                   "CSV / XLSX 直接导入",
                   "示例数据一键进入工作区",
                   "粘贴小表格，秒级解析",
                 ].map((item) => (
-                  <div key={item} className="rounded-2xl bg-white/85 px-4 py-3 shadow-sm shadow-slate-950/5 ring-1 ring-slate-200/80">
+                  <div key={item} className="rounded-2xl bg-white/85 px-3 py-2 shadow-sm shadow-slate-950/5 ring-1 ring-slate-200/80">
                     {item}
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="grid gap-4">
+            <div className="grid gap-3">
               <button
                 type="button"
                 onClick={openFilePicker}
-                className="group rounded-[1.5rem] bg-white p-5 text-left shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_56px_rgba(15,23,42,0.10)]"
+                className="entry-card group rounded-[1.5rem] bg-white p-4 text-left shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_56px_rgba(15,23,42,0.10)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">导入一</div>
-                    <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">上传 CSV / XLSX</div>
-                    <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600">选择本地表格后自动识别表头、字段类型和分析目标。</p>
+                    <div className="entry-card-title mt-1 text-xl font-semibold tracking-tight text-slate-950">上传 CSV / XLSX</div>
+                    <p className="mt-1 max-w-sm text-sm leading-6 text-slate-600">选择本地表格后自动识别表头、字段类型和分析目标。</p>
                   </div>
                   <div className="rounded-2xl bg-slate-950 p-3 text-white shadow-sm shadow-slate-950/15">
                     <Upload className="h-5 w-5" />
@@ -648,19 +669,19 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => loadSample(analysisGoal)}
-                className="group rounded-[1.5rem] bg-slate-950 p-5 text-left text-white shadow-[0_16px_48px_rgba(15,23,42,0.18)] transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
+                className="entry-card group rounded-[1.5rem] bg-slate-950 p-4 text-left text-white shadow-[0_16px_48px_rgba(15,23,42,0.18)] transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-xs font-medium uppercase tracking-[0.2em] text-white/55">导入二</div>
-                    <div className="mt-2 text-2xl font-semibold tracking-tight">加载示例数据</div>
-                    <p className="mt-2 max-w-sm text-sm leading-6 text-white/72">先用示例进入 workspace，再替换成真实数据。</p>
+                    <div className="entry-card-title mt-1 text-xl font-semibold tracking-tight">加载示例数据</div>
+                    <p className="mt-1 max-w-sm text-sm leading-6 text-white/72">先用示例进入 workspace，再替换成真实数据。</p>
                   </div>
                   <div className="rounded-2xl bg-white/10 p-3 text-white ring-1 ring-white/10">
                     <Play className="h-5 w-5" />
                   </div>
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/80">
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/80">
                   {GOAL_ORDER.map((goal) => (
                     <span key={goal} className="rounded-full bg-white/10 px-3 py-1">
                       {ANALYSIS_GOALS[goal].label}
@@ -672,13 +693,13 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setShowPastePanel((value) => !value)}
-                className="group rounded-[1.5rem] bg-white/90 p-5 text-left shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_56px_rgba(15,23,42,0.10)]"
+                className="entry-card group rounded-[1.5rem] bg-white/90 p-4 text-left shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_56px_rgba(15,23,42,0.10)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">导入三</div>
-                    <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">粘贴数据</div>
-                    <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600">直接粘贴 CSV / TSV 内容，适合临时处理小表格。</p>
+                    <div className="entry-card-title mt-1 text-xl font-semibold tracking-tight text-slate-950">粘贴数据</div>
+                    <p className="mt-1 max-w-sm text-sm leading-6 text-slate-600">直接粘贴 CSV / TSV 内容，适合临时处理小表格。</p>
                   </div>
                   <div className="rounded-2xl bg-slate-100 p-3 text-slate-700 ring-1 ring-slate-200/80">
                     <WandSparkles className="h-5 w-5" />
@@ -687,13 +708,13 @@ export default function Home() {
               </button>
 
               {showPastePanel && (
-                <div className="rounded-[1.5rem] bg-white p-4 shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80">
+                <div className="rounded-[1.5rem] bg-white p-3 shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80">
                   <div className="text-sm font-medium text-slate-700">粘贴 CSV / TSV 数据</div>
                   <Textarea
                     value={pasteText}
                     onChange={(event) => setPasteText(event.target.value)}
                     placeholder={"Time,ValueA,ValueB\n0,1.2,2.3\n1,1.8,2.9"}
-                    className="mt-3 min-h-40 resize-none border-slate-200 bg-slate-50/80 font-mono text-xs text-slate-700 shadow-none focus-visible:ring-slate-300"
+                    className="mt-3 min-h-32 resize-none border-slate-200 bg-slate-50/80 font-mono text-xs text-slate-700 shadow-none focus-visible:ring-slate-300"
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <p className="text-xs text-slate-500">支持逗号或制表符分隔，小表格更适合直接粘贴。</p>
@@ -707,67 +728,81 @@ export default function Home() {
           </section>
         </main>
       ) : (
-        <main className="mx-auto grid min-h-[calc(100vh-72px)] w-full max-w-[1680px] grid-cols-1 gap-4 px-4 py-4 xl:grid-cols-[320px_minmax(0,1fr)_340px] xl:px-6">
+        <main className="mx-auto grid h-full min-h-0 w-full max-w-[1680px] grid-cols-1 gap-4 overflow-hidden px-4 py-4 xl:grid-cols-[320px_minmax(0,1fr)_340px] xl:px-6">
           <aside className="min-h-0">
-            <DataEditor
-              data={data}
-              profile={profile}
-              analysisGoal={analysisGoal}
-              onAnalysisGoalChange={handleGoalChange}
-              mapping={{ xAxisColumn: config.xAxisColumn, selectedColumns: config.selectedColumns }}
-              onMappingChange={(mapping) => {
-                setConfig((prev) => ({
-                  ...prev,
-                  xAxisColumn: mapping.xAxisColumn,
-                  selectedColumns: mapping.selectedColumns.filter((index) => index !== mapping.xAxisColumn),
-                }));
-              }}
-              onDataChange={handleDataChange}
-              onRequestImport={openFilePicker}
-              onRequestSample={() => loadSample(analysisGoal)}
-              statusText={statusText}
-              onStatusChange={setStatusText}
-            />
+            <Suspense fallback={<div className="h-full rounded-[1.5rem] bg-white/80 ring-1 ring-slate-200/80" />}>
+              <DataEditor
+                data={data}
+                profile={profile}
+                analysisGoal={analysisGoal}
+                onAnalysisGoalChange={handleGoalChange}
+                mapping={{ xAxisColumn: config.xAxisColumn, selectedColumns: config.selectedColumns }}
+                onMappingChange={(mapping) => {
+                  setConfig((prev) => ({
+                    ...prev,
+                    xAxisColumn: mapping.xAxisColumn,
+                    selectedColumns: mapping.selectedColumns.filter((index) => index !== mapping.xAxisColumn),
+                  }));
+                }}
+                onDataChange={handleDataChange}
+                onRequestImport={openFilePicker}
+                onRequestSample={() => loadSample(analysisGoal)}
+                statusText={statusText}
+                onStatusChange={setStatusText}
+              />
+            </Suspense>
           </aside>
 
           <section className="min-h-0">
-            <ChartPreview
-              data={data}
-              config={config}
-              recommendations={recommendations}
-              insight={insight}
-              onApplyRecommendation={handleRecommendation}
-            />
+            <Suspense fallback={<div className="h-full rounded-[1.5rem] bg-white/80 ring-1 ring-slate-200/80" />}>
+              <ChartPreview
+                data={data}
+                config={config}
+                recommendations={recommendations}
+                insight={insight}
+                onApplyRecommendation={handleRecommendation}
+              />
+            </Suspense>
           </section>
 
           <aside className="min-h-0">
-            <ChartConfigPanel
-              config={config}
-              onConfigChange={setConfig}
-              recommendations={recommendations}
-              datasetProfile={profile}
-              analysisGoal={analysisGoal}
-              onAnalysisGoalChange={handleGoalChange}
-              onApplyRecommendation={handleRecommendation}
-              onRestoreRecommendedDefaults={() =>
-                handleRecommendation({
-                  chartType: plan.chartType,
-                  xAxisColumn: plan.xAxisColumn,
-                  selectedColumns: plan.selectedColumns,
-                  xAxisLabel: plan.xAxisLabel,
-                  yAxisLabel: plan.yAxisLabel,
-                })
-              }
-              onExportSnapshot={() => exportWorkspaceSnapshot(data, config, analysisGoal)}
-            />
+            <Suspense fallback={<div className="h-full rounded-[1.5rem] bg-white/80 ring-1 ring-slate-200/80" />}>
+              <ChartConfigPanel
+                config={config}
+                onConfigChange={setConfig}
+                recommendations={recommendations}
+                datasetProfile={profile}
+                analysisGoal={analysisGoal}
+                onAnalysisGoalChange={handleGoalChange}
+                onApplyRecommendation={handleRecommendation}
+                onRestoreRecommendedDefaults={() =>
+                  handleRecommendation({
+                    chartType: plan.chartType,
+                    xAxisColumn: plan.xAxisColumn,
+                    selectedColumns: plan.selectedColumns,
+                    xAxisLabel: plan.xAxisLabel,
+                    yAxisLabel: plan.yAxisLabel,
+                  })
+                }
+                onExportSnapshot={() => exportWorkspaceSnapshot(data, config, analysisGoal)}
+              />
+            </Suspense>
           </aside>
         </main>
       )}
 
-      <footer className="mx-auto flex max-w-[1680px] items-center justify-between px-4 pb-5 text-[11px] text-slate-500 lg:px-6">
-        <span>{statusText}</span>
-        <span>自动优先 · 只要导入数据就可以开始</span>
-      </footer>
+      {stage === "workspace" ? (
+        <footer className="mx-auto flex w-full max-w-[1680px] items-center justify-between px-4 py-2 text-[11px] text-slate-500 lg:px-6">
+          <span className="truncate pr-3">{statusText}</span>
+          <span className="shrink-0">自动优先 · 只要导入数据就可以开始</span>
+        </footer>
+      ) : null}
     </div>
   );
 }
+
+
+
+
+
+

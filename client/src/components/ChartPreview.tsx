@@ -164,6 +164,7 @@ export const ChartPreview = memo(function ChartPreview({
 
   const hasData = data.headers.length > 0 && data.rows.length > 0;
   const activeLabel = chartTypeLabels[config.chartType] ?? config.chartType;
+  const compactLayout = recommendations.length <= 4;
 
   const containerStyle = useMemo(() => {
     if (config.aspectRatio === "free") {
@@ -264,7 +265,7 @@ export const ChartPreview = memo(function ChartPreview({
           const active = item.chartType === config.chartType;
           return (
             <button
-              key={item.chartType}
+              key={`${item.chartType}-${item.title}`}
               type="button"
               onClick={() => onApplyRecommendation(item.patch)}
               className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-all ${
@@ -287,21 +288,21 @@ export const ChartPreview = memo(function ChartPreview({
         <p className="mt-1 text-sm leading-6 text-slate-600">{insight}</p>
       </div>
 
-      <div className="mt-4 min-h-0 flex-1 overflow-hidden rounded-[1.5rem] bg-white ring-1 ring-slate-200/70">
+      <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[1.5rem] bg-white ring-1 ring-slate-200/70">
         {hasData ? (
-          <div style={containerStyle} className="flex items-center justify-center p-3">
+          <div style={containerStyle} className={`flex h-full items-center justify-center p-3 ${compactLayout ? "md:p-2" : ""}`}>
             <ReactEChartsCore
               ref={chartRef}
               echarts={echarts}
               option={option}
-              style={{ width: "100%", height: "100%", minHeight: 420 }}
+              style={{ width: "100%", height: "100%", minHeight: compactLayout ? 280 : 340 }}
               opts={{ renderer: "canvas" }}
               notMerge
               lazyUpdate
             />
           </div>
         ) : (
-          <div className="flex h-[460px] items-center justify-center px-8 text-center text-slate-500">
+          <div className="flex h-full min-h-[280px] items-center justify-center px-8 text-center text-slate-500">
             <div>
               <Download className="mx-auto h-10 w-10 opacity-30" />
               <p className="mt-3 text-sm font-medium text-slate-900">请先导入数据</p>

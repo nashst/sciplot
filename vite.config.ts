@@ -16,6 +16,15 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          echarts: ["echarts", "echarts-for-react"],
+          ui: ["@radix-ui/react-dialog", "@radix-ui/react-select", "@radix-ui/react-tabs"],
+          xlsx: ["xlsx"],
+        },
+      },
+    },
   },
   server: {
     fs: {
