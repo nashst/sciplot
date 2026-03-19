@@ -6,6 +6,13 @@ import { autoDetectAndParse, parseFile, type DataChangeMeta } from "@/lib/dataPa
 import { buildDatasetProfile, type DatasetProfile } from "@/lib/autoInsights";
 import { getSampleData, type ParsedData } from "@/lib/chartEngine";
 import {
+  inferColumns,
+  recommendCharts,
+  suggestDefaultMapping,
+  type FieldMapping as EngineFieldMapping,
+  type InferredColumn,
+} from "@/lib/analysisEngine";
+import {
   ArrowDownToLine,
   FlaskConical,
   LayoutGrid,
@@ -44,6 +51,8 @@ type RecommendationCard = {
   patch: Pick<ChartConfig, "chartType" | "xAxisColumn" | "selectedColumns" | "xAxisLabel" | "yAxisLabel">;
 };
 
+type RecommendationPlan = RecommendationCard["patch"] & { reason: string };
+
 const ANALYSIS_GOALS: Record<AnalysisGoal, { label: string; short: string; description: string }> = {
   distribution: {
     label: "分布",
@@ -68,6 +77,116 @@ const ANALYSIS_GOALS: Record<AnalysisGoal, { label: string; short: string; descr
 };
 
 const GOAL_ORDER: AnalysisGoal[] = ["distribution", "trend", "relationship", "comparison"];
+
+function indexList(columns: InferredColumn[], type: InferredColumn["type"]) {
+  return columns.filter((column) => column.type === type).map((column) => column.index);
+}
+
+function toEngineMapping(config: ChartConfig): EngineFieldMapping {
+  return {
+    xAxisColumn: Number.isFinite(config.xAxisColumn) ? config.xAxisColumn : null,
+    yAxisColumn: config.selectedColumns[0] ?? null,
+    groupColumn: config.selectedColumns[1] ?? null,
+  };
+}
+
+function enforceMappingByChartType(
+  chartType: ChartType,
+  mapping: Pick<ChartConfig, "xAxisColumn" | "selectedColumns">,
+  inferredColumns: InferredColumn[],
+): Pick<ChartConfig, "xAxisColumn" | "selectedColumns"> {
+  const numeric = indexList(inferredColumns, "number");
+  const category = indexList(inferredColumns, "category");
+  const datetime = indexList(inferredColumns, "datetime");
+  const all = inferredColumns.map((column) => column.index);
+
+  let xAxisColumn = all.includes(mapping.xAxisColumn) ? mapping.xAxisColumn : (all[0] ?? 0);
+  let selectedColumns = Array.from(new Set(mapping.selectedColumns)).filter((index) => all.includes(index) && index !== xAxisColumn);
+
+  if (chartType === "histogram") {
+    if (!numeric.includes(xAxisColumn)) {
+      xAxisColumn = numeric[0] ?? xAxisColumn;
+    }
+    selectedColumns = [];
+  } else if (chartType === "line") {
+    if (![...datetime, ...numeric].includes(xAxisColumn)) {
+      xAxisColumn = datetime[0] ?? numeric[0] ?? xAxisColumn;
+    }
+    selectedColumns = selectedColumns.filter((index) => numeric.includes(index) && index !== xAxisColumn);
+    if (!selectedColumns.length) {
+      const fallback = numeric.find((index) => index !== xAxisColumn);
+      if (fallback != null) selectedColumns = [fallback];
+    }
+  } else if (chartType === "scatter") {
+    if (!numeric.includes(xAxisColumn)) {
+      xAxisColumn = numeric[0] ?? xAxisColumn;
+    }
+    const scatterY = selectedColumns.find((index) => numeric.includes(index) && index !== xAxisColumn)
+      ?? numeric.find((index) => index !== xAxisColumn);
+    selectedColumns = scatterY == null ? [] : [scatterY];
+  } else if (chartType === "boxplot") {
+    if (!category.includes(xAxisColumn)) {
+      xAxisColumn = category[0] ?? xAxisColumn;
+    }
+    const boxY = selectedColumns.find((index) => numeric.includes(index) && index !== xAxisColumn)
+      ?? numeric.find((index) => index !== xAxisColumn);
+    selectedColumns = boxY == null ? [] : [boxY];
+  } else if (chartType === "bar") {
+    if (!category.includes(xAxisColumn)) {
+      xAxisColumn = category[0] ?? xAxisColumn;
+    }
+    const barY = selectedColumns.find((index) => numeric.includes(index) && index !== xAxisColumn)
+      ?? numeric.find((index) => index !== xAxisColumn);
+    selectedColumns = barY == null ? [] : [barY];
+  }
+
+  return { xAxisColumn, selectedColumns };
+}
+
+function recommendationToPatch(
+  chartType: ChartType,
+  mapping: EngineFieldMapping,
+  headers: string[],
+  inferredColumns: InferredColumn[],
+): Pick<ChartConfig, "chartType" | "xAxisColumn" | "selectedColumns" | "xAxisLabel" | "yAxisLabel"> {
+  const rawX = mapping.xAxisColumn ?? 0;
+  const rawSelected = [mapping.yAxisColumn, mapping.groupColumn].filter((index): index is number => index != null);
+  const constrained = enforceMappingByChartType(
+    chartType,
+    { xAxisColumn: rawX, selectedColumns: rawSelected },
+    inferredColumns,
+  );
+
+  if (chartType === "line") {
+    const numeric = indexList(inferredColumns, "number").filter((index) => index !== constrained.xAxisColumn);
+    if (numeric.length > 1) {
+      constrained.selectedColumns = Array.from(new Set([...constrained.selectedColumns, ...numeric])).slice(0, 3);
+    }
+  }
+
+  return {
+    chartType,
+    xAxisColumn: constrained.xAxisColumn,
+    selectedColumns: constrained.selectedColumns,
+    xAxisLabel: headers[constrained.xAxisColumn] ?? "字段",
+    yAxisLabel: constrained.selectedColumns.length > 0 ? headers[constrained.selectedColumns[0]] ?? "数值" : "频数",
+  };
+}
+
+function buildGeneratedTitle(
+  chartType: ChartType,
+  headers: string[],
+  xAxisColumn: number,
+  selectedColumns: number[],
+): string {
+  const xLabel = headers[xAxisColumn] ?? "X";
+  const yLabels = selectedColumns.map((index) => headers[index]).filter(Boolean);
+  const chartName = chartTypeLabels[chartType] ?? chartType;
+  if (chartType === "histogram") return `${xLabel} 的分布（${chartName}）`;
+  if (yLabels.length > 1) return `${xLabel} 与 ${yLabels.join(" / ")}（${chartName}）`;
+  if (yLabels.length === 1) return `${xLabel} 与 ${yLabels[0]}（${chartName}）`;
+  return `${xLabel}（${chartName}）`;
+}
 
 const SAMPLE_DATA: Record<AnalysisGoal, ParsedData> = {
   distribution: {
@@ -433,33 +552,93 @@ export default function Home() {
   const [statusText, setStatusText] = useState("上传 CSV/XLSX、使用示例数据，或直接粘贴表格即可开始。");
 
   const profile = useMemo(() => buildDatasetProfile(data), [data]);
+  const inferredColumns = useMemo(() => inferColumns(data), [data]);
   const defaultGoal = useMemo(() => inferGoalFromData(data), [data]);
-  const plan = useMemo(() => buildGoalColumns(profile, analysisGoal), [profile, analysisGoal]);
-  const recommendations = useMemo(() => buildRecommendations(profile, analysisGoal), [profile, analysisGoal]);
   const hasData = data.headers.length > 0 && data.rows.length > 0;
+  const numericCount = inferredColumns.filter((column) => column.type === "number").length;
+  const datetimeCount = inferredColumns.filter((column) => column.type === "datetime").length;
+  const categoryCount = inferredColumns.filter((column) => column.type === "category").length;
+
+  const engineRecommendations = useMemo(
+    () => recommendCharts(analysisGoal, inferredColumns, toEngineMapping(config)),
+    [analysisGoal, inferredColumns, config],
+  );
+
+  const recommendations = useMemo<RecommendationCard[]>(
+    () =>
+      engineRecommendations.map((item) => {
+        const patch = recommendationToPatch(item.chartType, item.mapping, data.headers, inferredColumns);
+        return {
+          chartType: item.chartType,
+          title: chartTypeLabels[item.chartType],
+          reason: item.reason,
+          supported: item.available,
+          patch,
+        };
+      }),
+    [data.headers, engineRecommendations, inferredColumns],
+  );
+
+  const plan = useMemo<RecommendationPlan>(() => {
+    const best = recommendations.find((item) => item.supported) ?? recommendations[0];
+    if (!best) {
+      const fallback = recommendationToPatch(config.chartType, toEngineMapping(config), data.headers, inferredColumns);
+      return { ...fallback, reason: "未检测到可用推荐，已保留当前图表配置。" };
+    }
+    return { ...best.patch, reason: best.reason };
+  }, [config, data.headers, inferredColumns, recommendations]);
+
+  const insight = useMemo(() => {
+    const warning = profile.warnings[0];
+    return warning ? `${plan.reason} 数据提醒：${warning}` : plan.reason;
+  }, [plan.reason, profile.warnings]);
+
+  const generatedTitle = useMemo(
+    () => buildGeneratedTitle(config.chartType, data.headers, config.xAxisColumn, config.selectedColumns),
+    [config.chartType, config.selectedColumns, config.xAxisColumn, data.headers],
+  );
+
+  const previewConfig = useMemo<ChartConfig>(
+    () => ({
+      ...config,
+      title: config.title.trim() ? config.title : generatedTitle,
+    }),
+    [config, generatedTitle],
+  );
 
   const syncConfigForData = useCallback((nextData: ParsedData) => {
-    const maxIndex = Math.max(0, nextData.headers.length - 1);
+    const inferred = inferColumns(nextData);
     setConfig((prev) => {
-      const xAxisColumn = Math.min(prev.xAxisColumn, maxIndex);
-      const selectedColumns = Array.from(new Set<number>(prev.selectedColumns)).filter(
-        (index: number) => index >= 0 && index <= maxIndex && index !== xAxisColumn,
+      const constrained = enforceMappingByChartType(
+        prev.chartType,
+        { xAxisColumn: prev.xAxisColumn, selectedColumns: prev.selectedColumns },
+        inferred,
       );
-
       return {
         ...prev,
-        xAxisColumn,
-        selectedColumns,
-        xAxisLabel: nextData.headers[xAxisColumn] ?? prev.xAxisLabel,
-        yAxisLabel: selectedColumns.length > 0 ? nextData.headers[selectedColumns[0]] ?? prev.yAxisLabel : prev.yAxisLabel,
+        xAxisColumn: constrained.xAxisColumn,
+        selectedColumns: constrained.selectedColumns,
+        xAxisLabel: nextData.headers[constrained.xAxisColumn] ?? prev.xAxisLabel,
+        yAxisLabel:
+          constrained.selectedColumns.length > 0
+            ? nextData.headers[constrained.selectedColumns[0]] ?? prev.yAxisLabel
+            : (prev.chartType === "histogram" ? "频数" : prev.yAxisLabel),
       };
     });
   }, []);
 
   const applyGoalPlan = useCallback(
     (nextData: ParsedData, goal: AnalysisGoal) => {
-      const nextProfile = buildDatasetProfile(nextData);
-      const nextPlan = buildGoalColumns(nextProfile, goal);
+      const nextInferred = inferColumns(nextData);
+      const defaultMapping = suggestDefaultMapping(goal, nextInferred);
+      const nextRecommendations = recommendCharts(goal, nextInferred, defaultMapping);
+      const nextBest = nextRecommendations.find((item) => item.available) ?? nextRecommendations[0];
+      const nextPlan = recommendationToPatch(
+        nextBest?.chartType ?? "line",
+        nextBest?.mapping ?? defaultMapping,
+        nextData.headers,
+        nextInferred,
+      );
       setAnalysisGoal(goal);
       setData(nextData);
       setConfig((prev) => ({
@@ -474,7 +653,7 @@ export default function Home() {
         backgroundColor: "#ffffff",
       }));
       setStage("workspace");
-      setStatusText(buildStatusText(nextProfile, goal, nextPlan));
+      setStatusText(nextBest?.reason ?? `${ANALYSIS_GOALS[goal].label} 模式已激活。`);
     },
     [],
   );
@@ -539,11 +718,54 @@ export default function Home() {
   }, [applyGoalPlan, data, hasData]);
 
   const handleRecommendation = useCallback((patch: RecommendationCard["patch"]) => {
+    const constrained = enforceMappingByChartType(
+      patch.chartType,
+      { xAxisColumn: patch.xAxisColumn, selectedColumns: patch.selectedColumns },
+      inferredColumns,
+    );
     setConfig((prev) => ({
       ...prev,
       ...patch,
+      xAxisColumn: constrained.xAxisColumn,
+      selectedColumns: constrained.selectedColumns,
+      xAxisLabel: data.headers[constrained.xAxisColumn] ?? patch.xAxisLabel,
+      yAxisLabel:
+        constrained.selectedColumns.length > 0
+          ? data.headers[constrained.selectedColumns[0]] ?? patch.yAxisLabel
+          : (patch.chartType === "histogram" ? "频数" : patch.yAxisLabel),
     }));
     setStatusText(`已切换到 ${chartTypeLabels[patch.chartType]}。`);
+  }, [data.headers, inferredColumns]);
+
+  const handleResetStyle = useCallback(() => {
+    setConfig((prev) => ({
+      ...prev,
+      stylePreset: defaultChartConfig.stylePreset,
+      colorTheme: defaultChartConfig.colorTheme,
+      colors: [...defaultChartConfig.colors],
+      showLegend: defaultChartConfig.showLegend,
+      showGrid: defaultChartConfig.showGrid,
+      showSymbol: defaultChartConfig.showSymbol,
+      smooth: defaultChartConfig.smooth,
+      symbolSize: defaultChartConfig.symbolSize,
+      lineWidth: defaultChartConfig.lineWidth,
+      fontSize: defaultChartConfig.fontSize,
+      backgroundColor: defaultChartConfig.backgroundColor,
+    }));
+    setStatusText("样式参数已重置为默认。");
+  }, []);
+
+  const handleResetStatistics = useCallback(() => {
+    setConfig((prev) => ({
+      ...prev,
+      showTrendLine: defaultChartConfig.showTrendLine,
+      showConfidenceInterval: defaultChartConfig.showConfidenceInterval,
+      errorBarType: defaultChartConfig.errorBarType,
+      showSignificance: defaultChartConfig.showSignificance,
+      referenceLine: undefined,
+      referenceLineLabel: defaultChartConfig.referenceLineLabel,
+    }));
+    setStatusText("统计参数已重置。");
   }, []);
 
   const handleReset = useCallback(() => {
@@ -651,15 +873,15 @@ export default function Home() {
               <button
                 type="button"
                 onClick={openFilePicker}
-                className="entry-card group rounded-[1.5rem] bg-white p-4 text-left shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_56px_rgba(15,23,42,0.10)]"
+                className="entry-card group rounded-[1.5rem] bg-slate-950 p-4 text-left text-white shadow-[0_16px_48px_rgba(15,23,42,0.18)] ring-1 ring-slate-900/90 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">导入一</div>
-                    <div className="entry-card-title mt-1 text-xl font-semibold tracking-tight text-slate-950">上传 CSV / XLSX</div>
-                    <p className="mt-1 max-w-sm text-sm leading-6 text-slate-600">选择本地表格后自动识别表头、字段类型和分析目标。</p>
+                    <div className="text-xs font-medium uppercase tracking-[0.2em] text-white/55">主路径</div>
+                    <div className="entry-card-title mt-1 text-xl font-semibold tracking-tight">上传 CSV / XLSX</div>
+                    <p className="mt-1 max-w-sm text-sm leading-6 text-white/75">优先入口：选择本地表格后自动识别表头、字段类型和分析目标。</p>
                   </div>
-                  <div className="rounded-2xl bg-slate-950 p-3 text-white shadow-sm shadow-slate-950/15">
+                  <div className="rounded-2xl bg-white/10 p-3 text-white ring-1 ring-white/10">
                     <Upload className="h-5 w-5" />
                   </div>
                 </div>
@@ -668,21 +890,21 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => loadSample(analysisGoal)}
-                className="entry-card group rounded-[1.5rem] bg-slate-950 p-4 text-left text-white shadow-[0_16px_48px_rgba(15,23,42,0.18)] transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
+                className="entry-card group rounded-[1.5rem] bg-white p-4 text-left shadow-[0_16px_48px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_56px_rgba(15,23,42,0.10)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="text-xs font-medium uppercase tracking-[0.2em] text-white/55">导入二</div>
-                    <div className="entry-card-title mt-1 text-xl font-semibold tracking-tight">加载示例数据</div>
-                    <p className="mt-1 max-w-sm text-sm leading-6 text-white/72">先用示例进入 workspace，再替换成真实数据。</p>
+                    <div className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">导入二</div>
+                    <div className="entry-card-title mt-1 text-xl font-semibold tracking-tight text-slate-950">加载示例数据</div>
+                    <p className="mt-1 max-w-sm text-sm leading-6 text-slate-600">次级入口：先用示例进入 workspace，再替换成真实数据。</p>
                   </div>
-                  <div className="rounded-2xl bg-white/10 p-3 text-white ring-1 ring-white/10">
+                  <div className="rounded-2xl bg-slate-100 p-3 text-slate-700 ring-1 ring-slate-200/80">
                     <Play className="h-5 w-5" />
                   </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/80">
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
                   {GOAL_ORDER.map((goal) => (
-                    <span key={goal} className="rounded-full bg-white/10 px-3 py-1">
+                    <span key={goal} className="rounded-full bg-slate-100 px-3 py-1">
                       {ANALYSIS_GOALS[goal].label}
                     </span>
                   ))}
@@ -727,7 +949,24 @@ export default function Home() {
           </section>
         </main>
       ) : (
-        <main className="mx-auto grid h-full min-h-0 w-full max-w-[1680px] grid-cols-1 gap-4 overflow-hidden px-4 py-4 xl:grid-cols-[320px_minmax(0,1fr)_340px] xl:px-6">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1680px] flex-col overflow-hidden px-4 py-4 xl:px-6">
+          <section className="mb-3 rounded-2xl bg-white/92 p-3 ring-1 ring-slate-200/80">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700">
+                自动分析摘要
+              </div>
+              <div className="text-[11px] text-slate-500">系统已根据目标 + 字段类型 + 当前映射完成推荐</div>
+            </div>
+            <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-5">
+              <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200/70">字段类型：数值 {numericCount} / 时间 {datetimeCount} / 分类 {categoryCount}</div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200/70">分析目标：{ANALYSIS_GOALS[analysisGoal].label}</div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200/70">当前图表：{chartTypeLabels[config.chartType]}</div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200/70 truncate">当前映射：X={data.headers[config.xAxisColumn] ?? "未选择"} / Y={config.selectedColumns.map((idx) => data.headers[idx]).filter(Boolean).join("、") || "未选择"}</div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200/70 truncate">推荐理由：{insight}</div>
+            </div>
+          </section>
+
+          <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)_340px]">
           <aside className="min-h-0 overflow-y-auto pr-1">
             <Suspense fallback={<div className="h-full rounded-[1.5rem] bg-white/80 ring-1 ring-slate-200/80" />}>
               <DataEditor
@@ -737,10 +976,20 @@ export default function Home() {
                 onAnalysisGoalChange={handleGoalChange}
                 mapping={{ xAxisColumn: config.xAxisColumn, selectedColumns: config.selectedColumns }}
                 onMappingChange={(mapping) => {
+                  const constrained = enforceMappingByChartType(
+                    config.chartType,
+                    { xAxisColumn: mapping.xAxisColumn, selectedColumns: mapping.selectedColumns },
+                    inferredColumns,
+                  );
                   setConfig((prev) => ({
                     ...prev,
-                    xAxisColumn: mapping.xAxisColumn,
-                    selectedColumns: mapping.selectedColumns.filter((index) => index !== mapping.xAxisColumn),
+                    xAxisColumn: constrained.xAxisColumn,
+                    selectedColumns: constrained.selectedColumns,
+                    xAxisLabel: data.headers[constrained.xAxisColumn] ?? prev.xAxisLabel,
+                    yAxisLabel:
+                      constrained.selectedColumns.length > 0
+                        ? data.headers[constrained.selectedColumns[0]] ?? prev.yAxisLabel
+                        : (prev.chartType === "histogram" ? "频数" : prev.yAxisLabel),
                   }));
                 }}
                 onDataChange={handleDataChange}
@@ -756,8 +1005,10 @@ export default function Home() {
             <Suspense fallback={<div className="h-full rounded-[1.5rem] bg-white/80 ring-1 ring-slate-200/80" />}>
               <ChartPreview
                 data={data}
-                config={config}
+                config={previewConfig}
                 recommendations={recommendations}
+                insight={insight}
+                autoGeneratedTitle={!config.title.trim()}
                 onApplyRecommendation={handleRecommendation}
               />
             </Suspense>
@@ -783,10 +1034,13 @@ export default function Home() {
                   })
                 }
                 onExportSnapshot={() => exportWorkspaceSnapshot(data, config, analysisGoal)}
+                onResetStyle={handleResetStyle}
+                onResetStatistics={handleResetStatistics}
               />
             </Suspense>
           </aside>
         </main>
+        </div>
       )}
 
       {stage === "workspace" ? (

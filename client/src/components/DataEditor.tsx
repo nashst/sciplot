@@ -1,4 +1,5 @@
 ﻿import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,16 @@ const GOAL_META: Record<AnalysisGoal, { label: string; hint: string }> = {
   comparison: { label: "对比", hint: "先看组间差异" },
 };
 
+type StepCardProps = {
+  step: string;
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+  rightSlot?: ReactNode;
+  compact?: boolean;
+  className?: string;
+};
+
 function columnTypeLabel(kind: DatasetProfile["columns"][number]["kind"]) {
   if (kind === "numeric") return "数值";
   if (kind === "datetime") return "时间";
@@ -57,6 +68,56 @@ function columnBadgeClass(kind: DatasetProfile["columns"][number]["kind"]) {
   if (kind === "datetime") return "bg-violet-50 text-violet-700 ring-violet-200/80";
   if (kind === "categorical") return "bg-emerald-50 text-emerald-700 ring-emerald-200/80";
   return "bg-slate-50 text-slate-600 ring-slate-200/80";
+}
+
+function StepCard({ step, title, subtitle, children, rightSlot, compact = false, className = "" }: StepCardProps) {
+  return (
+    <section className={`rounded-[1.35rem] border border-slate-200/75 bg-slate-50/60 ${compact ? "p-3" : "p-3.5"} shadow-[0_10px_30px_rgba(15,23,42,0.04)] ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500 ring-1 ring-slate-200/70">
+            {step}
+          </div>
+          <h3 className="mt-2 text-sm font-semibold tracking-tight text-slate-950">{title}</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{subtitle}</p>
+        </div>
+        {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
+      </div>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function getMappingHint(goal: AnalysisGoal, profile: DatasetProfile) {
+  const numericColumns = profile.columns.filter((column) => column.kind === "numeric");
+  const datetimeColumns = profile.columns.filter((column) => column.kind === "datetime");
+  const categoryColumns = profile.columns.filter((column) => column.kind === "categorical");
+
+  if (!profile.columns.length) {
+    return "上传数据后，系统会根据字段类型自动约束映射。";
+  }
+
+  if (goal === "trend") {
+    return datetimeColumns.length > 0
+      ? `检测到时间列，建议用 ${datetimeColumns[0]?.name ?? "时间"} 作为 X，数值列作为 Y。`
+      : `趋势模式优先使用顺序轴配合数值列；当前可用数值列 ${numericColumns.length} 个。`;
+  }
+
+  if (goal === "relationship") {
+    return numericColumns.length >= 2
+      ? "检测到两个数值列，建议用数值 X + 数值 Y 做关系图。"
+      : "关系模式需要至少两个数值列，当前会限制到合法映射。";
+  }
+
+  if (goal === "comparison") {
+    return categoryColumns.length > 0 && numericColumns.length > 0
+      ? `检测到分类列与数值列，建议用 ${categoryColumns[0]?.name ?? "分类"} 分组、${numericColumns[0]?.name ?? "数值"} 对比。`
+      : "对比模式优先使用分类列 + 数值列映射。";
+  }
+
+  return numericColumns.length > 0
+    ? `分布模式优先使用单个数值列；当前可用数值列 ${numericColumns.length} 个。`
+    : "分布模式需要数值列作为目标字段。";
 }
 
 export const DataEditor = memo(function DataEditor({
@@ -205,11 +266,17 @@ export const DataEditor = memo(function DataEditor({
 
   const hasData = data.headers.length > 0 && data.rows.length > 0;
   const selectedSet = useMemo(() => new Set(mapping.selectedColumns), [mapping.selectedColumns]);
+  const mappingHint = useMemo(() => getMappingHint(analysisGoal, profile), [analysisGoal, profile]);
+  const xAxisLabel = data.headers[mapping.xAxisColumn] ?? "未选择";
+  const yAxisLabel = mapping.selectedColumns
+    .map((index) => data.headers[index])
+    .filter(Boolean)
+    .join("、") || "未选择";
 
   return (
-    <div className="flex min-h-full flex-col rounded-[1.5rem] bg-white/92 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 backdrop-blur-sm">
+    <div className="flex min-h-full flex-col gap-3 rounded-[1.5rem] bg-white/92 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 backdrop-blur-sm">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-slate-400">
             <Database className="h-3.5 w-3.5 text-slate-700" />
             数据与字段
@@ -217,7 +284,7 @@ export const DataEditor = memo(function DataEditor({
           <h2 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">左侧编辑区</h2>
           <p className="mt-1 text-sm leading-6 text-slate-500">先定分析目标，再微调字段映射和原始数据。</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-col items-end gap-2">
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onRequestImport} className="h-8 border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
               <Upload className="mr-1.5 h-4 w-4" />
@@ -232,26 +299,34 @@ export const DataEditor = memo(function DataEditor({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200/70">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">数据量</div>
-          <div className="mt-2 text-lg font-semibold text-slate-950">{profile.rowCount} 行</div>
+      <StepCard
+        step="Step 1"
+        title="数据"
+        subtitle="先确认导入状态、数据规模与字段构成。"
+        rightSlot={<span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">已导入 {profile.rowCount} 行</span>}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl bg-white px-3 py-3 ring-1 ring-slate-200/70">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">数据量</div>
+            <div className="mt-2 text-lg font-semibold text-slate-950">{profile.rowCount} 行</div>
+          </div>
+          <div className="rounded-2xl bg-white px-3 py-3 ring-1 ring-slate-200/70">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">字段</div>
+            <div className="mt-2 text-lg font-semibold text-slate-950">{profile.columnCount} 列</div>
+          </div>
+          <div className="rounded-2xl bg-white px-3 py-3 ring-1 ring-slate-200/70">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">当前目标</div>
+            <div className="mt-2 text-lg font-semibold text-slate-950">{GOAL_META[analysisGoal].label}</div>
+          </div>
         </div>
-        <div className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200/70">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">字段</div>
-          <div className="mt-2 text-lg font-semibold text-slate-950">{profile.columnCount} 列</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200/70">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">当前目标</div>
-          <div className="mt-2 text-lg font-semibold text-slate-950">{GOAL_META[analysisGoal].label}</div>
-        </div>
-      </div>
+      </StepCard>
 
-      <section className="mt-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">分析目标</h3>
-          <span className="text-[11px] text-slate-500">点击后自动更新默认图</span>
-        </div>
+      <StepCard
+        step="Step 2"
+        title="分析目标"
+        subtitle="先选“想看什么”，系统再收紧图表推荐。"
+        rightSlot={<span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">自动优先</span>}
+      >
         <div className="grid grid-cols-2 gap-2">
           {Object.entries(GOAL_META).map(([goal, meta]) => {
             const active = analysisGoal === goal;
@@ -272,44 +347,24 @@ export const DataEditor = memo(function DataEditor({
             );
           })}
         </div>
-      </section>
+      </StepCard>
 
-      <section className="mt-4 space-y-2 min-h-0">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">变量概览</h3>
-          <span className="text-[11px] text-slate-500">数值 / 时间 / 分类</span>
-        </div>
-        <ScrollArea className="h-[130px] rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-200/70">
-          <div className="flex flex-col gap-2 pr-2">
-            {profile.columns.map((column) => (
-              <div key={column.index} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-slate-900">{column.name}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-500">
-                    缺失 {column.missingCount} · 唯一值 {column.nonMissingCount ? Math.max(1, column.nonMissingCount) : 0}
-                  </div>
-                </div>
-                <Badge variant="outline" className={`border-transparent ${columnBadgeClass(column.kind)}`}>
-                  {columnTypeLabel(column.kind)}
-                </Badge>
-              </div>
-            ))}
-            {!profile.columns.length && (
-              <div className="rounded-xl bg-white px-3 py-4 text-sm text-slate-500 ring-1 ring-slate-200/70">
-                暂无字段，先上传 CSV / XLSX、使用示例数据或粘贴表格。
-              </div>
-            )}
+      <StepCard
+        step="Step 3"
+        title="字段映射"
+        subtitle="按图表语义约束 X / Y / 分组字段。"
+        rightSlot={<span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">X + Y</span>}
+      >
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-3 ring-1 ring-slate-100">
+          <div className="rounded-xl bg-slate-50/80 px-3 py-2 text-xs leading-6 text-slate-600 ring-1 ring-slate-200/70">
+            <div className="font-medium text-slate-900">映射提示</div>
+            <p className="mt-1">{mappingHint}</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              当前 X 轴：{xAxisLabel} · 当前 Y 轴：{yAxisLabel}
+            </p>
           </div>
-        </ScrollArea>
-      </section>
 
-      <section className="mt-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">字段映射</h3>
-          <span className="text-[11px] text-slate-500">X 轴 + Y 轴</span>
-        </div>
-        <div className="grid gap-3 rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-200/70">
-          <div className="space-y-1.5">
+          <div className="mt-3 space-y-1.5">
             <div className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-400">X 轴字段</div>
             <Select
               value={String(mapping.xAxisColumn)}
@@ -332,10 +387,14 @@ export const DataEditor = memo(function DataEditor({
             </Select>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="mt-3 space-y-1.5">
             <div className="flex items-center justify-between">
               <div className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-400">Y 轴字段</div>
-              <button type="button" className="text-[11px] text-slate-500 hover:text-slate-900" onClick={() => setMapping({ selectedColumns: data.headers.map((_, index) => index).filter((index) => index !== mapping.xAxisColumn) })}>
+              <button
+                type="button"
+                className="text-[11px] text-slate-500 hover:text-slate-900"
+                onClick={() => setMapping({ selectedColumns: data.headers.map((_, index) => index).filter((index) => index !== mapping.xAxisColumn) })}
+              >
                 全选
               </button>
             </div>
@@ -370,145 +429,145 @@ export const DataEditor = memo(function DataEditor({
             </ScrollArea>
           </div>
         </div>
-      </section>
+      </StepCard>
 
-      <section className="mt-4 flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">数据预览</h3>
-          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-            <ClipboardList className="h-3.5 w-3.5" />
-            前 {Math.min(rowsPerPage, data.rows.length)} 行
-          </div>
-        </div>
-
-        {!hasData ? (
-          <div className="mt-3 flex flex-1 items-center justify-center rounded-2xl bg-slate-50/80 p-6 text-center ring-1 ring-slate-200/70">
-            <div>
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-600 ring-1 ring-slate-200/70">
-                <Grid2x2Plus className="h-5 w-5" />
+      <StepCard
+        step="Step 4"
+        title="数据预览"
+        subtitle="查看原始表格，检查映射是否与数据一致。"
+        rightSlot={<span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70">前 {Math.min(rowsPerPage, data.rows.length)} 行</span>}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          {!hasData ? (
+            <div className="flex flex-1 items-center justify-center rounded-2xl bg-white px-6 py-8 text-center ring-1 ring-slate-200/70">
+              <div>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-600 ring-1 ring-slate-200/70">
+                  <Grid2x2Plus className="h-5 w-5" />
+                </div>
+                <p className="mt-3 text-sm font-medium text-slate-900">当前没有可预览的数据</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">可以上传文件、载入示例数据，或者粘贴一个小表格。</p>
               </div>
-              <p className="mt-3 text-sm font-medium text-slate-900">当前没有可预览的数据</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">可以上传文件、载入示例数据，或者粘贴一个小表格。</p>
             </div>
-          </div>
-        ) : (
-          <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/70">
-            <div className="overflow-auto">
-              <table className="w-full border-separate border-spacing-0 text-xs">
-                <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur">
-                  <tr>
-                    <th className="sticky left-0 z-20 w-12 bg-slate-50/95 px-2 py-2 text-center font-medium text-slate-500">#</th>
-                    {data.headers.map((header, index) => (
-                      <th key={index} className="relative min-w-[110px] border-b border-slate-200/70 px-2 py-2 text-left align-top text-slate-700">
-                        <div className="flex items-center gap-2">
-                          <Input
-                            value={header}
-                            onChange={(event) => updateCell(-1, index, event.target.value)}
-                            className="h-7 border-slate-200 bg-white text-xs font-medium text-slate-900 shadow-none focus-visible:ring-slate-300"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => deleteColumn(index)}
-                            className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                            title="删除列"
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">{profile.columns[index] ? columnTypeLabel(profile.columns[index].kind) : ""}</div>
-                      </th>
-                    ))}
-                    <th className="border-b border-slate-200/70 px-2 py-2 text-center">
-                      <button
-                        type="button"
-                        onClick={addColumn}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white transition-transform hover:scale-105"
-                        title="新增列"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((row, rowOffset) => {
-                    const rowIndex = startIndex + rowOffset;
-                    return (
-                      <tr key={rowIndex} className="group hover:bg-slate-50/80">
-                        <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-2 py-1.5 text-center font-mono text-[11px] tabular-nums text-slate-500 group-hover:bg-slate-50/80">
-                          <div className="flex items-center justify-between gap-1">
-                            <span>{rowIndex + 1}</span>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/70">
+              <div className="overflow-auto">
+                <table className="w-full border-separate border-spacing-0 text-xs">
+                  <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur">
+                    <tr>
+                      <th className="sticky left-0 z-20 w-12 bg-slate-50/95 px-2 py-2 text-center font-medium text-slate-500">#</th>
+                      {data.headers.map((header, index) => (
+                        <th key={index} className="relative min-w-[110px] border-b border-slate-200/70 px-2 py-2 text-left align-top text-slate-700">
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={header}
+                              onChange={(event) => updateCell(-1, index, event.target.value)}
+                              className="h-7 border-slate-200 bg-white text-xs font-medium text-slate-900 shadow-none focus-visible:ring-slate-300"
+                            />
                             <button
                               type="button"
-                              onClick={() => deleteRow(rowOffset)}
-                              className="rounded-full p-1 text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
-                              title="删除行"
+                              onClick={() => deleteColumn(index)}
+                              className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                              title="删除列"
                             >
                               ×
                             </button>
                           </div>
-                        </td>
-                        {row.map((cell, columnIndex) => (
-                          <td key={columnIndex} className="border-b border-slate-100 px-1 py-1.5 align-top">
-                            <Input
-                              value={String(cell ?? "")}
-                              onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
-                              className="h-7 border-slate-200 bg-transparent text-xs text-slate-700 shadow-none focus-visible:ring-slate-300"
-                            />
+                          <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">{profile.columns[index] ? columnTypeLabel(profile.columns[index].kind) : ""}</div>
+                        </th>
+                      ))}
+                      <th className="border-b border-slate-200/70 px-2 py-2 text-center">
+                        <button
+                          type="button"
+                          onClick={addColumn}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white transition-transform hover:scale-105"
+                          title="新增列"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRows.map((row, rowOffset) => {
+                      const rowIndex = startIndex + rowOffset;
+                      return (
+                        <tr key={rowIndex} className="group hover:bg-slate-50/80">
+                          <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-2 py-1.5 text-center font-mono text-[11px] tabular-nums text-slate-500 group-hover:bg-slate-50/80">
+                            <div className="flex items-center justify-between gap-1">
+                              <span>{rowIndex + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => deleteRow(rowOffset)}
+                                className="rounded-full p-1 text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                                title="删除行"
+                              >
+                                ×
+                              </button>
+                            </div>
                           </td>
-                        ))}
-                        <td className="border-b border-slate-100 px-2 py-1.5 text-center">
-                          <button type="button" onClick={addRow} className="text-slate-400 hover:text-slate-950" title="在末尾新增行">
-                            <Plus className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          {row.map((cell, columnIndex) => (
+                            <td key={columnIndex} className="border-b border-slate-100 px-1 py-1.5 align-top">
+                              <Input
+                                value={String(cell ?? "")}
+                                onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
+                                className="h-7 border-slate-200 bg-transparent text-xs text-slate-700 shadow-none focus-visible:ring-slate-300"
+                              />
+                            </td>
+                          ))}
+                          <td className="border-b border-slate-100 px-2 py-1.5 text-center">
+                            <button type="button" onClick={addRow} className="text-slate-400 hover:text-slate-950" title="在末尾新增行">
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-slate-200/70 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-500">
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                    上一页
+                  </Button>
+                  <span>
+                    第 {currentPage} / {totalPages} 页 · 共 {data.rows.length} 行
+                  </span>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
+                    下一页
+                  </Button>
+                </div>
+                <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 hover:text-slate-950" onClick={() => setShowPastePanel((value) => !value)}>
+                  <PencilLine className="h-3.5 w-3.5" />
+                  {showPastePanel ? "关闭粘贴" : "粘贴数据"}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center justify-between gap-3 border-t border-slate-200/70 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-500">
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
-                  上一页
-                </Button>
-                <span>
-                  第 {currentPage} / {totalPages} 页 · 共 {data.rows.length} 行
-                </span>
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
-                  下一页
+          )}
+
+          {showPastePanel && (
+            <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200/70">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">粘贴表格</div>
+                  <div className="mt-1 text-sm text-slate-600">支持 CSV / TSV 文本，粘贴后会直接更新 workspace。</div>
+                </div>
+                <Button size="sm" onClick={handlePaste} className="bg-slate-950 text-white hover:bg-slate-800">
+                  解析并应用
                 </Button>
               </div>
-              <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 hover:text-slate-950" onClick={() => setShowPastePanel((value) => !value)}>
-                <PencilLine className="h-3.5 w-3.5" />
-                {showPastePanel ? "关闭粘贴" : "粘贴数据"}
-              </button>
+              <Textarea
+                ref={pasteInputRef}
+                value={pasteText}
+                onChange={(event) => setPasteText(event.target.value)}
+                placeholder={"Time,ValueA,ValueB\n0,1.2,2.4\n1,1.6,2.9"}
+                className="mt-3 min-h-40 resize-none border-slate-200 bg-white font-mono text-xs shadow-none focus-visible:ring-slate-300"
+              />
             </div>
-          </div>
-        )}
-      </section>
-
-      {showPastePanel && (
-        <section className="mt-4 rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-200/70">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">粘贴表格</div>
-              <div className="mt-1 text-sm text-slate-600">支持 CSV / TSV 文本，粘贴后会直接更新 workspace。</div>
-            </div>
-            <Button size="sm" onClick={handlePaste} className="bg-slate-950 text-white hover:bg-slate-800">
-              解析并应用
-            </Button>
-          </div>
-          <Textarea
-            ref={pasteInputRef}
-            value={pasteText}
-            onChange={(event) => setPasteText(event.target.value)}
-            placeholder={"Time,ValueA,ValueB\n0,1.2,2.4\n1,1.6,2.9"}
-            className="mt-3 min-h-40 resize-none border-slate-200 bg-white font-mono text-xs shadow-none focus-visible:ring-slate-300"
-          />
-        </section>
-      )}
+          )}
+        </div>
+      </StepCard>
     </div>
   );
 });

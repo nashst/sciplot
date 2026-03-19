@@ -37,6 +37,8 @@ interface ChartConfigPanelProps {
   onApplyRecommendation: (patch: RecommendationCard["patch"]) => void;
   onRestoreRecommendedDefaults: () => void;
   onExportSnapshot: () => void;
+  onResetStyle?: () => void;
+  onResetStatistics?: () => void;
 }
 
 const GOAL_TEXT: Record<AnalysisGoal, { label: string; hint: string }> = {
@@ -61,6 +63,17 @@ function columnTypeSummary(profile: DatasetProfile) {
   return { numeric, datetime, categorical };
 }
 
+function getColumnName(profile: DatasetProfile, index: number | null | undefined, fallback: string) {
+  if (index == null) return fallback;
+  return profile.columns.find((column) => column.index === index)?.name ?? fallback;
+}
+
+function getSelectedNames(profile: DatasetProfile, indices: number[]) {
+  return indices
+    .map((index) => profile.columns.find((column) => column.index === index)?.name)
+    .filter((name): name is string => Boolean(name));
+}
+
 export const ChartConfigPanel = memo(function ChartConfigPanel({
   config,
   onConfigChange,
@@ -71,9 +84,14 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
   onApplyRecommendation,
   onRestoreRecommendedDefaults,
   onExportSnapshot,
+  onResetStyle,
+  onResetStatistics,
 }: ChartConfigPanelProps) {
   const summary = useMemo(() => columnTypeSummary(datasetProfile), [datasetProfile]);
   const setPartial = (patch: Partial<ChartConfig>) => updateConfig(config, onConfigChange, patch);
+  const xAxisName = getColumnName(datasetProfile, config.xAxisColumn, "未选择");
+  const yAxisNames = getSelectedNames(datasetProfile, config.selectedColumns);
+  const activeTheme = colorThemes[config.colorTheme];
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-[1.5rem] bg-white/92 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 backdrop-blur-sm">
@@ -95,6 +113,7 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
         <span className="rounded-full bg-slate-100 px-3 py-1">{datasetProfile.rowCount} 行</span>
         <span className="rounded-full bg-slate-100 px-3 py-1">{datasetProfile.columnCount} 列</span>
         <span className="rounded-full bg-slate-100 px-3 py-1">{GOAL_TEXT[analysisGoal].label} 模式</span>
+        <span className="rounded-full bg-slate-100 px-3 py-1">{chartTypeLabels[config.chartType]}</span>
       </div>
 
       <Tabs defaultValue="suggestions" className="mt-4 flex min-h-0 flex-1 flex-col">
@@ -121,8 +140,22 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
                     <p className="mt-1 text-sm leading-6 text-slate-600">{GOAL_TEXT[analysisGoal].hint}</p>
                   </div>
                   <Badge variant="outline" className="border-transparent bg-white text-slate-700 ring-1 ring-slate-200/70">
-                    {chartTypeLabels[config.chartType]}
+                    {activeTheme?.label ?? config.colorTheme}
                   </Badge>
+                </div>
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">当前图</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-950">{chartTypeLabels[config.chartType]}</div>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">X 轴</div>
+                    <div className="mt-1 truncate text-sm font-semibold text-slate-950">{xAxisName}</div>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Y 轴</div>
+                    <div className="mt-1 truncate text-sm font-semibold text-slate-950">{yAxisNames.length > 0 ? yAxisNames.join("、") : "未选择"}</div>
+                  </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {(Object.keys(GOAL_TEXT) as AnalysisGoal[]).map((goal) => {
@@ -148,9 +181,9 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">推荐图表</div>
-                  <button type="button" className="text-[11px] text-slate-500 hover:text-slate-950" onClick={onRestoreRecommendedDefaults}>
+                  <Button variant="ghost" size="sm" type="button" onClick={onRestoreRecommendedDefaults} className="h-7 px-2 text-[11px] text-slate-500 hover:text-slate-950">
                     恢复推荐默认
-                  </button>
+                  </Button>
                 </div>
                 <div className="space-y-2">
                   {recommendations.map((item) => {
@@ -170,7 +203,12 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <div className="text-sm font-semibold">{item.title}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-semibold">{item.title}</div>
+                              <Badge variant="outline" className={`border-transparent px-2 py-0 text-[10px] ${active ? "bg-white/10 text-white" : "bg-slate-100 text-slate-500"}`}>
+                                {item.supported ? "可用" : "不可用"}
+                              </Badge>
+                            </div>
                             <div className={`mt-1 text-xs leading-5 ${active ? "text-white/75" : "text-slate-500"}`}>{item.reason}</div>
                           </div>
                           <ArrowRight className="h-4 w-4 shrink-0 opacity-70" />
@@ -188,9 +226,14 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
           <ScrollArea className="h-full pr-3">
             <div className="space-y-4">
               <div className="rounded-2xl bg-slate-50/80 p-4 ring-1 ring-slate-200/70">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-                  <BarChart3 className="h-3.5 w-3.5" />
-                  标题与坐标
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    标题与坐标
+                  </div>
+                  <Button variant="ghost" size="sm" type="button" onClick={onResetStyle} className="h-7 px-2 text-[11px] text-slate-500 hover:text-slate-950">
+                    重置样式
+                  </Button>
                 </div>
                 <div className="mt-3 space-y-3">
                   <Input
@@ -219,7 +262,7 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
               <div className="rounded-2xl bg-slate-50/80 p-4 ring-1 ring-slate-200/70">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
                   <Brush className="h-3.5 w-3.5" />
-                  视觉风格
+                  主题 / 网格 / 图例
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <Select value={config.stylePreset} onValueChange={(value) => setPartial({ stylePreset: value })}>
@@ -277,7 +320,7 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
               <div className="rounded-2xl bg-slate-50/80 p-4 ring-1 ring-slate-200/70">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
                   <Layers3 className="h-3.5 w-3.5" />
-                  绘图参数
+                  点大小 / 线宽 / 字体大小
                 </div>
                 <div className="mt-3 space-y-4">
                   <div className="space-y-1.5">
@@ -311,9 +354,14 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
           <ScrollArea className="h-full pr-3">
             <div className="space-y-4">
               <div className="rounded-2xl bg-slate-50/80 p-4 ring-1 ring-slate-200/70">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-                  <Sigma className="h-3.5 w-3.5" />
-                  数据统计
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    <Sigma className="h-3.5 w-3.5" />
+                    数据统计
+                  </div>
+                  <Button variant="ghost" size="sm" type="button" onClick={onResetStatistics} className="h-7 px-2 text-[11px] text-slate-500 hover:text-slate-950">
+                    重置统计
+                  </Button>
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
@@ -333,6 +381,16 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
                     <div className="mt-1 text-lg font-semibold text-slate-950">{datasetProfile.warnings.length}</div>
                   </div>
                 </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">当前图</div>
+                    <div className="mt-1 truncate text-sm font-semibold text-slate-950">{chartTypeLabels[config.chartType]}</div>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">当前轴</div>
+                    <div className="mt-1 truncate text-sm font-semibold text-slate-950">{xAxisName}</div>
+                  </div>
+                </div>
                 {datasetProfile.warnings.length > 0 && (
                   <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900 ring-1 ring-amber-200/70">
                     {datasetProfile.warnings[0]}
@@ -343,17 +401,14 @@ export const ChartConfigPanel = memo(function ChartConfigPanel({
               <div className="rounded-2xl bg-slate-50/80 p-4 ring-1 ring-slate-200/70">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  当前映射
+                  当前映射摘要
                 </div>
                 <div className="mt-3 space-y-2 text-sm text-slate-600">
                   <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
-                    X 轴：{datasetProfile.columns.find((column) => column.index === config.xAxisColumn)?.name ?? "未选择"}
+                    X 轴：{xAxisName}
                   </div>
                   <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
-                    Y 轴：{config.selectedColumns.length > 0 ? config.selectedColumns.map((index) => datasetProfile.columns.find((column) => column.index === index)?.name).filter(Boolean).join("、") : "未选择"}
-                  </div>
-                  <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200/70">
-                    当前图：{chartTypeLabels[config.chartType]} · {GOAL_TEXT[analysisGoal].label} 模式
+                    Y 轴：{yAxisNames.length > 0 ? yAxisNames.join("、") : "未选择"}
                   </div>
                 </div>
               </div>
