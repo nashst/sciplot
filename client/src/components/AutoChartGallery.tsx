@@ -59,6 +59,7 @@ export interface GalleryCandidateItem {
   reason: string;
   config: ChartConfig;
   available?: boolean;
+  supported?: boolean;
 }
 
 export interface GalleryCandidateGroup {
@@ -174,7 +175,7 @@ const GalleryCard = memo(function GalleryCard({
   exporting: boolean;
 }) {
   const chartRef = useRef<ReactEChartsCore>(null);
-  const available = item.available !== false;
+  const available = item.available ?? item.supported ?? true;
 
   const option = useMemo<EChartsOption>(() => {
     if (item.chartType === "histogram") {
