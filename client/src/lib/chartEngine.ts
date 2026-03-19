@@ -807,6 +807,132 @@ export function buildBoxplotChart(data: ParsedData, config: ChartConfig): EChart
   };
 }
 
+function formatHistogramLabel(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  const abs = Math.abs(value);
+  if (abs >= 100 || Number.isInteger(value)) return String(Math.round(value));
+  return String(Number(value.toFixed(2)));
+}
+
+function pickHistogramColumn(data: ParsedData, config: ChartConfig) {
+  const candidates = Array.from(
+    new Set([
+      ...(config.selectedColumns || []),
+      config.xAxisColumn ?? 0,
+      ...data.headers.map((_, index) => index),
+    ]),
+  );
+
+  for (const index of candidates) {
+    if (index < 0 || index >= data.headers.length) continue;
+    const values = data.rows
+      .map((row) => row[index])
+      .filter(isNumeric)
+      .map(toNumber)
+      .filter((value) => Number.isFinite(value));
+    if (values.length >= 2) {
+      return {
+        index,
+        name: data.headers[index] ?? "Value",
+        values,
+      };
+    }
+  }
+
+  return {
+    index: 0,
+    name: data.headers[0] ?? "Value",
+    values: data.rows
+      .map((row) => row[0])
+      .filter(isNumeric)
+      .map(toNumber)
+      .filter((value) => Number.isFinite(value)),
+  };
+}
+
+export function buildHistogramChart(data: ParsedData, config: ChartConfig): EChartsOption {
+  const base = getBaseOption(config);
+  const column = pickHistogramColumn(data, config);
+  const values = column.values;
+
+  if (values.length === 0) {
+    return {
+      ...base,
+      xAxis: {
+        ...(base.xAxis as object),
+        type: "category" as const,
+        data: [],
+        name: column.name,
+      },
+      yAxis: {
+        ...(base.yAxis as object),
+        type: "value" as const,
+        name: "频数",
+      },
+      series: [],
+    };
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const binCount = Math.max(5, Math.min(20, Math.ceil(Math.sqrt(values.length))));
+  const bins = Array.from({ length: binCount }, () => 0);
+  const labels: string[] = [];
+
+  values.forEach((value) => {
+    const normalized = range === 0 ? 0 : (value - min) / range;
+    const index = Math.min(binCount - 1, Math.max(0, Math.floor(normalized * binCount)));
+    bins[index] += 1;
+  });
+
+  for (let i = 0; i < binCount; i++) {
+    const start = range === 0 ? min : min + (range / binCount) * i;
+    const end = range === 0 ? max : i === binCount - 1 ? max : min + (range / binCount) * (i + 1);
+    labels.push(`${formatHistogramLabel(start)}-${formatHistogramLabel(end)}`);
+  }
+
+  return {
+    ...base,
+    grid: {
+      ...(base.grid as object),
+      bottom: 72,
+    },
+    tooltip: {
+      ...(base.tooltip as object),
+      trigger: "axis" as const,
+      axisPointer: { type: "shadow" as const },
+    },
+    xAxis: {
+      ...(base.xAxis as object),
+      type: "category" as const,
+      data: labels,
+      name: column.name,
+      axisLabel: {
+        ...(base.xAxis as any)?.axisLabel,
+        interval: 0,
+      },
+    },
+    yAxis: {
+      ...(base.yAxis as object),
+      type: "value" as const,
+      name: "频数",
+    },
+    series: [
+      {
+        name: column.name,
+        type: "bar" as const,
+        data: bins,
+        barMaxWidth: 36,
+        itemStyle: {
+          borderRadius: [4, 4, 0, 0],
+        },
+        label: labelConfig(config, "top"),
+      },
+    ],
+  };
+}
+
 export function buildAreaChart(data: ParsedData, config: ChartConfig): EChartsOption {
   const base = getBaseOption(config);
   const xData = data.rows.map((r) => r[0]);
@@ -1155,7 +1281,7 @@ export function buildChart(
   rawData: ParsedData,
   config: ChartConfig,
 ): EChartsOption {
-  const data = filterColumns(rawData, config);
+  const data = chartType === "histogram" ? rawData : filterColumns(rawData, config);
   switch (chartType) {
     case "line":
       return buildLineChart(data, config);
@@ -1175,6 +1301,8 @@ export function buildChart(
       return buildHeatmapChart(data, config);
     case "boxplot":
       return buildBoxplotChart(data, config);
+    case "histogram":
+      return buildHistogramChart(data, config);
     case "violin":
       return buildViolinChart(data, config);
     default:
@@ -1273,6 +1401,32 @@ export function getSampleData(chartType: ChartType): ParsedData {
           [16.1, 15.9, 17.2, 19.5],
         ],
       };
+    case "histogram":
+      return {
+        headers: ["Measurement"],
+        rows: [
+          [12.4],
+          [11.8],
+          [13.1],
+          [12.9],
+          [14.2],
+          [13.7],
+          [11.2],
+          [12.1],
+          [15.4],
+          [14.8],
+          [13.3],
+          [12.7],
+          [11.9],
+          [13.9],
+          [14.6],
+          [15.1],
+          [12.5],
+          [13.0],
+          [11.4],
+          [14.0],
+        ],
+      };
     case "area":
       return {
         headers: ["Month", "CO₂ (ppm)", "CH₄ (ppb)"],
@@ -1335,6 +1489,11 @@ export function getSampleData(chartType: ChartType): ParsedData {
           [12.0, 20.1, 14.2, 25.8],
           [14.5, 19.0, 16.5, 21.7],
         ],
+      };
+    default:
+      return {
+        headers: [],
+        rows: [],
       };
   }
 }

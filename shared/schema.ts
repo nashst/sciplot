@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-// Chart types supported
 export const chartTypes = [
   "line",
   "scatter",
@@ -11,37 +10,37 @@ export const chartTypes = [
   "radar",
   "heatmap",
   "boxplot",
+  "histogram",
   "violin",
 ] as const;
 
 export type ChartType = (typeof chartTypes)[number];
 
 export const chartTypeLabels: Record<ChartType, string> = {
-  line: "æŠ˜çº¿å›¾",
-  scatter: "æ•£ç‚¹å›¾",
-  bar: "æŸ±çŠ¶å›¾",
-  barH: "æ¡å½¢å›¾",
-  area: "é¢ç§¯å›¾",
-  pie: "é¥¼å›¾",
-  radar: "é›·è¾¾å›¾",
-  heatmap: "çƒ­åŠ›å›¾",
-  boxplot: "ç®±çº¿å›¾",
-  violin: "å°æç´å›¾",
+  line: "ÕÛÏßÍ¼",
+  scatter: "É¢µãÍ¼",
+  bar: "Öù×´Í¼",
+  barH: "ÌõĞÎÍ¼",
+  area: "Ãæ»ıÍ¼",
+  pie: "±ıÍ¼",
+  radar: "À×´ïÍ¼",
+  heatmap: "ÈÈÁ¦Í¼",
+  boxplot: "ÏäÏßÍ¼",
+  histogram: "Ö±·½Í¼",
+  violin: "Ğ¡ÌáÇÙÍ¼",
 };
 
-// Nature-level color palette (muted, high-contrast, colorblind-safe)
 export const NATURE_COLORS = [
-  "#2E6B8A", // Steel Blue
-  "#C75C2F", // Burnt Orange
-  "#4A8C5C", // Sage Green
-  "#8B5E8B", // Muted Purple
-  "#D4A84B", // Muted Gold
-  "#C74A60", // Muted Rose
-  "#5B7E9E", // Dusty Blue
-  "#7A6B3A", // Dark Khaki
+  "#2E6B8A",
+  "#C75C2F",
+  "#4A8C5C",
+  "#8B5E8B",
+  "#D4A84B",
+  "#C74A60",
+  "#5B7E9E",
+  "#7A6B3A",
 ];
 
-// Color theme presets
 export const colorThemes: Record<string, { label: string; colors: string[] }> = {
   nature: { label: "Nature", colors: NATURE_COLORS },
   science: {
@@ -61,23 +60,22 @@ export const colorThemes: Record<string, { label: string; colors: string[] }> = 
     colors: ["#BC3C29", "#0072B5", "#E18727", "#20854E", "#7876B1", "#6F99AD", "#FFDC91", "#EE4C97"],
   },
   pastel: {
-    label: "æŸ”å’Œ",
+    label: "ÈáºÍ",
     colors: ["#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5"],
   },
   vibrant: {
-    label: "é²œè‰³",
+    label: "ÏÊÑŞ",
     colors: ["#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#A65628", "#F781BF", "#999999"],
   },
 };
 
-// Journal-specific style presets
 export const journalPresets: Record<string, { label: string; icon: string; description: string }> = {
-  default: { label: "é»˜è®¤", icon: "ğŸ¨", description: "é€šç”¨é»˜è®¤" },
-  academic: { label: "å­¦æœ¯", icon: "ğŸ›ï¸", description: "ç»å…¸é»‘ç™½æ¡†" },
-  nature: { label: "Nature", icon: "ğŸ“—", description: "Nature æœŸåˆŠ" },
-  science: { label: "Science", icon: "ğŸ“˜", description: "Science æœŸåˆŠ" },
-  cell: { label: "Cell", icon: "ğŸ“™", description: "Cell æœŸåˆŠ" },
-  clear: { label: "ç®€æ´", icon: "âœ¨", description: "æ— åæ ‡è½´" },
+  default: { label: "Ä¬ÈÏ", icon: "??", description: "Í¨ÓÃÄ¬ÈÏ·ç¸ñ" },
+  academic: { label: "Ñ§Êõ", icon: "??", description: "¾­µäºÚ°×ÆÚ¿¯·ç" },
+  nature: { label: "Nature", icon: "??", description: "Nature ·ç¸ñ" },
+  science: { label: "Science", icon: "??", description: "Science ·ç¸ñ" },
+  cell: { label: "Cell", icon: "??", description: "Cell ·ç¸ñ" },
+  clear: { label: "ÇåË¬", icon: "?", description: "¼ò½àÎŞ¸ÉÈÅ" },
 };
 
 export const chartConfigSchema = z.object({
@@ -104,7 +102,6 @@ export const chartConfigSchema = z.object({
   areaOpacity: z.number().default(0.35),
   pieRoseType: z.boolean().default(false),
   pieDonut: z.boolean().default(false),
-  // New features
   showDataLabels: z.boolean().default(false),
   stacked: z.boolean().default(false),
   sortData: z.enum(["none", "asc", "desc"]).default("none"),
@@ -119,10 +116,8 @@ export const chartConfigSchema = z.object({
   errorBarType: z.enum(["none", "sd", "se"]).default("none"),
   aspectRatio: z.string().default("free"),
   stylePreset: z.string().default("default"),
-  // Axis interval controls
   xAxisInterval: z.number().optional(),
   yAxisInterval: z.number().optional(),
-  // Significance annotations
   showSignificance: z.boolean().default(false),
 });
 
