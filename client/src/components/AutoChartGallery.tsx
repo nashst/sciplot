@@ -25,7 +25,7 @@ import { CanvasRenderer, SVGRenderer } from "echarts/renderers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { buildChart, type ParsedData } from "@/lib/chartEngine";
-import { chartTypeLabels, type ChartConfig, type ChartType } from "@shared/schema";
+import { type ChartConfig, type ChartType } from "@shared/schema";
 import { ArrowRight, Download } from "lucide-react";
 import type { EChartsOption } from "echarts";
 
@@ -58,6 +58,7 @@ export interface GalleryCandidateItem {
   title: string;
   reason: string;
   config: ChartConfig;
+  available?: boolean;
 }
 
 export interface GalleryCandidateGroup {
@@ -146,20 +147,34 @@ const GoalDescriptions: Record<AnalysisGoal, string> = {
   comparison: "查看分组之间差异",
 };
 
+const ChartTypeName: Partial<Record<ChartType, string>> = {
+  line: "折线图",
+  scatter: "散点图",
+  bar: "柱状图",
+  histogram: "直方图",
+  boxplot: "箱线图",
+  pie: "饼图",
+  radar: "雷达图",
+  heatmap: "热力图",
+};
+
 const GalleryCard = memo(function GalleryCard({
   data,
   item,
+  goalLabel,
   onEdit,
   onQuickExport,
   exporting,
 }: {
   data: ParsedData;
   item: GalleryCandidateItem;
+  goalLabel?: string;
   onEdit: () => void;
   onQuickExport: () => void;
   exporting: boolean;
 }) {
   const chartRef = useRef<ReactEChartsCore>(null);
+  const available = item.available !== false;
 
   const option = useMemo<EChartsOption>(() => {
     if (item.chartType === "histogram") {
@@ -175,12 +190,17 @@ const GalleryCard = memo(function GalleryCard({
     const url = instance.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#ffffff" });
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${item.title || "sciplot-chart"}.png`;
+    a.download = `${item.title || "自动图表"}.png`;
     a.click();
   };
 
   return (
-    <article className="rounded-2xl bg-white p-3 ring-1 ring-slate-200/80 shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
+    <article
+      className={[
+        "rounded-2xl bg-white p-3 ring-1 ring-slate-200/80 shadow-[0_12px_34px_rgba(15,23,42,0.06)]",
+        available ? "" : "opacity-50 grayscale-[0.1]",
+      ].join(" ")}
+    >
       <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-2">
         <ReactEChartsCore
           ref={chartRef}
@@ -193,23 +213,42 @@ const GalleryCard = memo(function GalleryCard({
         />
       </div>
 
+      {goalLabel ? (
+        <div className="mt-3">
+          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+            {goalLabel}
+          </span>
+        </div>
+      ) : null}
+
       <div className="mt-3 flex items-start justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900 leading-5">{item.title}</h3>
         <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">
-          {chartTypeLabels[item.chartType]}
+          {ChartTypeName[item.chartType] ?? "图表"}
         </Badge>
       </div>
 
       <p className="mt-2 text-xs leading-5 text-slate-600 line-clamp-2">{item.reason}</p>
 
       <div className="mt-3 flex items-center gap-2">
-        <Button size="sm" onClick={onEdit} className="h-8 bg-slate-950 text-white hover:bg-slate-800">
-          Edit this chart
+        <Button
+          size="sm"
+          onClick={onEdit}
+          disabled={!available}
+          className="h-8 bg-slate-950 text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+        >
+          编辑此图
           <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
         </Button>
-        <Button variant="outline" size="sm" onClick={quickExport} disabled={exporting} className="h-8 border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={quickExport}
+          disabled={exporting}
+          className="h-8 border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+        >
           <Download className="mr-1.5 h-3.5 w-3.5" />
-          {exporting ? "Exporting" : "Quick export"}
+          {exporting ? "导出中" : "快速导出"}
         </Button>
       </div>
     </article>
@@ -228,9 +267,9 @@ export const AutoChartGallery = memo(function AutoChartGallery({
     <section className="rounded-[1.6rem] bg-white/92 p-4 ring-1 ring-slate-200/80 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-400">Auto-Generated Charts</div>
+          <div className="text-xs font-medium tracking-[0.18em] text-slate-400">自动生成图表画廊</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">自动探索图表画廊</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">系统按分析目标自动生成多张基础图。可直接导出，或进入下方精修。</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">系统会按分析目标自动生成多张基础图。你可以直接导出，也可以继续下方精修。</p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px] text-slate-600">
           <span className="rounded-full bg-slate-100 px-3 py-1">{datasetSummary.rowCount} 行</span>
@@ -254,6 +293,7 @@ export const AutoChartGallery = memo(function AutoChartGallery({
                   key={item.id}
                   data={data}
                   item={item}
+                  goalLabel={group.label}
                   onEdit={() => onEditChart(item.id)}
                   onQuickExport={() => onQuickExport(item.id)}
                   exporting={quickExportingId === item.id}
