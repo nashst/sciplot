@@ -207,7 +207,7 @@ export const DataEditor = memo(function DataEditor({
   const selectedSet = useMemo(() => new Set(mapping.selectedColumns), [mapping.selectedColumns]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-[1.5rem] bg-white/92 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 backdrop-blur-sm">
+    <div className="flex min-h-full flex-col rounded-[1.5rem] bg-white/92 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 backdrop-blur-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-slate-400">

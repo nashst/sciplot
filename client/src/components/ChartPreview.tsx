@@ -166,19 +166,6 @@ export const ChartPreview = memo(function ChartPreview({
   const activeLabel = chartTypeLabels[config.chartType] ?? config.chartType;
   const compactLayout = recommendations.length <= 4;
 
-  const containerStyle = useMemo(() => {
-    if (config.aspectRatio === "free") {
-      return { width: "100%", height: "100%" };
-    }
-    const [width, height] = config.aspectRatio.split(":").map(Number);
-    return {
-      width: "100%",
-      height: "auto",
-      aspectRatio: `${width}/${height}`,
-      maxWidth: "100%",
-    };
-  }, [config.aspectRatio]);
-
   const exportSVG = useCallback(() => {
     const width = config.width || 1200;
     const height = config.height || 800;
@@ -290,16 +277,18 @@ export const ChartPreview = memo(function ChartPreview({
 
       <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[1.5rem] bg-white ring-1 ring-slate-200/70">
         {hasData ? (
-          <div style={containerStyle} className={`flex h-full items-center justify-center p-3 ${compactLayout ? "md:p-2" : ""}`}>
-            <ReactEChartsCore
-              ref={chartRef}
-              echarts={echarts}
-              option={option}
-              style={{ width: "100%", height: "100%", minHeight: compactLayout ? 280 : 340 }}
-              opts={{ renderer: "canvas" }}
-              notMerge
-              lazyUpdate
-            />
+          <div className={`flex h-full items-center justify-center p-3 ${compactLayout ? "md:p-2" : ""}`}>
+            <div className="aspect-square h-full max-h-full w-full max-w-[920px]">
+              <ReactEChartsCore
+                ref={chartRef}
+                echarts={echarts}
+                option={option}
+                style={{ width: "100%", height: "100%", minHeight: compactLayout ? 280 : 340 }}
+                opts={{ renderer: "canvas" }}
+                notMerge
+                lazyUpdate
+              />
+            </div>
           </div>
         ) : (
           <div className="flex h-full min-h-[280px] items-center justify-center px-8 text-center text-slate-500">

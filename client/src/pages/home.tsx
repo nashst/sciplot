@@ -729,7 +729,7 @@ export default function Home() {
         </main>
       ) : (
         <main className="mx-auto grid h-full min-h-0 w-full max-w-[1680px] grid-cols-1 gap-4 overflow-hidden px-4 py-4 xl:grid-cols-[320px_minmax(0,1fr)_340px] xl:px-6">
-          <aside className="min-h-0">
+          <aside className="min-h-0 overflow-y-auto pr-1">
             <Suspense fallback={<div className="h-full rounded-[1.5rem] bg-white/80 ring-1 ring-slate-200/80" />}>
               <DataEditor
                 data={data}
@@ -765,7 +765,7 @@ export default function Home() {
             </Suspense>
           </section>
 
-          <aside className="min-h-0">
+          <aside className="min-h-0 overflow-y-auto pl-1">
             <Suspense fallback={<div className="h-full rounded-[1.5rem] bg-white/80 ring-1 ring-slate-200/80" />}>
               <ChartConfigPanel
                 config={config}
