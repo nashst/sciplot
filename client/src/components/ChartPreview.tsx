@@ -62,7 +62,6 @@ interface ChartPreviewProps {
   data: ParsedData;
   config: ChartConfig;
   recommendations: RecommendationCard[];
-  insight: string;
   onApplyRecommendation: (patch: RecommendationCard["patch"]) => void;
 }
 
@@ -150,7 +149,6 @@ export const ChartPreview = memo(function ChartPreview({
   data,
   config,
   recommendations,
-  insight,
   onApplyRecommendation,
 }: ChartPreviewProps) {
   const chartRef = useRef<ReactEChartsCore>(null);
@@ -224,12 +222,9 @@ export const ChartPreview = memo(function ChartPreview({
           </div>
           <div>
             <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{config.title || "自动生成的首图"}</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">{insight}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">当前图：{activeLabel}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">{data.rows.length} 行</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">{data.headers.length} 列</span>
+            <div className="mt-1 text-sm leading-6 text-slate-500">
+              当前图：{activeLabel} · {data.rows.length} 行 · {data.headers.length} 列
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -268,11 +263,6 @@ export const ChartPreview = memo(function ChartPreview({
             </button>
           );
         })}
-      </div>
-
-      <div className="mt-3 rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-200/70">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">当前解释</div>
-        <p className="mt-1 text-sm leading-6 text-slate-600">{insight}</p>
       </div>
 
       <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[1.5rem] bg-white ring-1 ring-slate-200/70">

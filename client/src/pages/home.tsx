@@ -436,7 +436,6 @@ export default function Home() {
   const defaultGoal = useMemo(() => inferGoalFromData(data), [data]);
   const plan = useMemo(() => buildGoalColumns(profile, analysisGoal), [profile, analysisGoal]);
   const recommendations = useMemo(() => buildRecommendations(profile, analysisGoal), [profile, analysisGoal]);
-  const insight = useMemo(() => buildStatusText(profile, analysisGoal, plan), [profile, analysisGoal, plan]);
   const hasData = data.headers.length > 0 && data.rows.length > 0;
 
   const syncConfigForData = useCallback((nextData: ParsedData) => {
@@ -759,7 +758,6 @@ export default function Home() {
                 data={data}
                 config={config}
                 recommendations={recommendations}
-                insight={insight}
                 onApplyRecommendation={handleRecommendation}
               />
             </Suspense>
